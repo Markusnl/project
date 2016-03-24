@@ -28,6 +28,17 @@ public class onvifControl {
         envelope.addNamespaceDeclaration("tds", "http://www.onvif.org/ver10/device/wsdl");
         envelope.addNamespaceDeclaration("tt", "http://www.onvif.org/ver10/schema");
 
+        //SOAP Header
+        SOAPHeader soapHeader = envelope.getHeader();
+        soapHeader.addNamespaceDeclaration("wsse", "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd");
+        soapHeader.addNamespaceDeclaration("wsu", "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd");
+        SOAPElement soapHeaderElem = soapHeader.addChildElement("Security", "wsse");
+        SOAPElement WSUsernameToken = soapHeaderElem.addChildElement("UsernameToken", "wsse");
+        WSUsernameToken.addChildElement("Username", "wsse").addTextNode("Username");
+        WSUsernameToken.addChildElement("Password Type = PasswordDigest", "wsse").addTextNode("Password");
+        WSUsernameToken.addChildElement("Nonce", "wsse").addTextNode("nonce");
+        WSUsernameToken.addChildElement("Created", "wsu").addTextNode("time"); 
+        
         // SOAP Body
         SOAPBody soapBody = envelope.getBody();
         SOAPElement soapBodyElem = soapBody.addChildElement("GetCapabilities", "tds");
