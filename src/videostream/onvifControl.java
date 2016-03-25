@@ -1,88 +1,133 @@
 package videostream;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.xml.soap.*;
 import javax.xml.parsers.*;
 import org.w3c.dom.Document;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.w3c.dom.NodeList;
+import java.util.Base64;
 
 public class onvifControl {
 
-    public void getCapabilities(String ip) throws SOAPException, IOException {
-        MessageFactory messageFactory = MessageFactory.newInstance();
-        SOAPMessage soapMessage = messageFactory.createMessage();
-        SOAPPart soapPart = soapMessage.getSOAPPart();
-
-        // SOAP Envelope
-        SOAPEnvelope envelope = soapPart.getEnvelope();
-        envelope.addNamespaceDeclaration("tds", "http://www.onvif.org/ver10/device/wsdl");
-        envelope.addNamespaceDeclaration("tt", "http://www.onvif.org/ver10/schema");
-
-        //SOAP Header
-        SOAPHeader soapHeader = envelope.getHeader();
-        soapHeader.addNamespaceDeclaration("wsse", "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd");
-        soapHeader.addNamespaceDeclaration("wsu", "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd");
-        SOAPElement soapHeaderElem = soapHeader.addChildElement("Security", "wsse");
-        SOAPElement WSUsernameToken = soapHeaderElem.addChildElement("UsernameToken", "wsse");
-        WSUsernameToken.addChildElement("Username", "wsse").addTextNode("Username");
-        WSUsernameToken.addChildElement("Password Type = PasswordDigest", "wsse").addTextNode("Password");
-        WSUsernameToken.addChildElement("Nonce", "wsse").addTextNode("nonce");
-        WSUsernameToken.addChildElement("Created", "wsu").addTextNode("time"); 
-        
-        // SOAP Body
-        SOAPBody soapBody = envelope.getBody();
-        SOAPElement soapBodyElem = soapBody.addChildElement("GetCapabilities", "tds");
-        soapBodyElem.addChildElement("Category", "tds").addTextNode("Media");
-        soapMessage.saveChanges();
-
-        sendOnvif(ip, soapMessage);
+    private String envelopeMessageEnd() {
+        return "</soap:Envelope>";
     }
 
-    public void getSysemDeviceInformation(String ip) throws SOAPException, IOException {
-        MessageFactory messageFactory = MessageFactory.newInstance();
-        SOAPMessage soapMessage = messageFactory.createMessage();
-        SOAPPart soapPart = soapMessage.getSOAPPart();
-
-        // SOAP Envelope
-        SOAPEnvelope envelope = soapPart.getEnvelope();
-        envelope.addNamespaceDeclaration("tds", "http://www.onvif.org/ver10/device/wsdl");
-
-        // SOAP Body
-        SOAPBody soapBody = envelope.getBody();
-        SOAPElement soapBodyElem = soapBody.addChildElement("GetDeviceInformation", "tds");
-        soapMessage.saveChanges();
-
-        sendOnvif(ip, soapMessage);
+    private String envelopeMessageStart() {
+        return "<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:tds=\"http://www.onvif.org/ver10/device/wsdl\" xmlns:tt=\"http://www.onvif.org/ver10/schema\">";
     }
 
-    public void getSystemDateAndTime(String ip) throws SOAPException, IOException {
-        MessageFactory messageFactory = MessageFactory.newInstance();
-        SOAPMessage soapMessage = messageFactory.createMessage();
-        SOAPPart soapPart = soapMessage.getSOAPPart();
+    private String wsUsernameToken() throws IOException {
+        String username = "admin";
+        String password = "pass";
+        String encodednonce = "";
+        String encodeddigest = "";
 
-        // SOAP Envelope
-        SOAPEnvelope envelope = soapPart.getEnvelope();
-        envelope.addNamespaceDeclaration("tds", "http://www.onvif.org/ver10/device/wsdl");
+        //generate nonce
+        SecureRandom random = new SecureRandom();
+        byte nonce[] = new byte[20];
+        random.nextBytes(nonce);
+        String time = getCurrentTimeStamp();
 
-        // SOAP Body
-        SOAPBody soapBody = envelope.getBody();
-        SOAPElement soapBodyElem = soapBody.addChildElement("GetSystemDateAndTime", "tds");
-        soapMessage.saveChanges();
+        //encode nonce
+        encodednonce = Base64.getEncoder().encodeToString(nonce);
 
-        sendOnvif(ip, soapMessage);
+        //create hashengine
+        MessageDigest md = null;
+        try {
+            md = MessageDigest.getInstance("SHA-1");
+        } catch (NoSuchAlgorithmException ex) {
+            Logger.getLogger(onvifControl.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+        //concatenate nonce + time + password
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        outputStream.write(nonce);
+        outputStream.write(time.getBytes());
+        outputStream.write(password.getBytes());
+        byte out[] = outputStream.toByteArray();
+
+        //create hash
+        encodeddigest = Base64.getEncoder().encodeToString(md.digest(out));
+        //https://gist.github.com/lsowen/1a46f9d5fc026e6efc7d
+        //Digest = B64ENCODE( SHA1( B64DECODE( Nonce ) + Date + Password ) )
+        String header = ""
+                + "<soap:Header>"
+                + "<wsse:Security xmlns:wsse=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd\" xmlns:wsu=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd\">"
+                + "<wsse:UsernameToken>"
+                + "<wsse:Username>" + username + "</wsse:Username>"
+                + "<wsse:Password Type=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest\">" + encodeddigest + "</wsse:Password>"
+                + "<wsse:Nonce EncodingType=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary\">" + encodednonce + "</wsse:Nonce>"
+                + "<wsu:Created>" + time + "</wsu:Created>"
+                + "</wsse:UsernameToken>"
+                + "</wsse:Security>"
+                + "</soap:Header>";
+
+        return header;
     }
 
-    private int sendOnvif(String ip, SOAPMessage message) throws IOException {
+    public void getCapabilities(String ip) throws IOException {
+        String message = envelopeMessageStart() + wsUsernameToken()
+                + "<soap:Body>"
+                + "<tds:GetCapabilities>"
+                + "<tds:Category>Media</tds:Category>"
+                + "</tds:GetCapabilities>"
+                + "</soap:Body>"
+                + envelopeMessageEnd();
+
+        try {
+            parseXML(sendOnvif(message, ip), "*");
+        } catch (ParserConfigurationException | SAXException | NullPointerException ex) {
+            System.out.println(" - Messaging failed");
+        }
+    }
+
+    public void getSystemDeviceInformation(String ip) throws IOException {
+        String message = envelopeMessageStart() + wsUsernameToken()
+                + "<soap:Body>"
+                + "<tds:GetDeviceInformation>"
+                + "</tds:GetDeviceInformation>"
+                + "</soap:Body>"
+                + envelopeMessageEnd();
+
+        try {
+            parseXML(sendOnvif(message, ip), "tds:Manufacturer");
+        } catch (ParserConfigurationException | SAXException | NullPointerException ex) {
+            System.out.println(" - Messaging failed");
+        }
+    }
+
+    public void getSystemDateAndTime(String ip) throws IOException {
+        String message = envelopeMessageStart() + wsUsernameToken()
+                + "<soap:Body>"
+                + "<tds:GetSystemDateAndTime>"
+                + "</tds:GetSystemDateAndTime>"
+                + "</soap:Body>"
+                + envelopeMessageEnd();
+
+        try {
+            parseXML(sendOnvif(message, ip), "tt:Date");
+        } catch (ParserConfigurationException | SAXException | NullPointerException ex) {
+            System.out.println(" - Messaging failed");
+        }
+    }
+
+    private String sendOnvif(String message, String ip) throws IOException {
         String url = "http://" + ip + "/onvif/device_service";
         URL obj = new URL(url);
         HttpURLConnection con = (HttpURLConnection) obj.openConnection();
@@ -95,11 +140,7 @@ public class onvifControl {
         con.setDoOutput(true);
         DataOutputStream wr = new DataOutputStream(con.getOutputStream());
 
-        try {
-            message.writeTo(wr);
-        } catch (SOAPException ex) {
-            Logger.getLogger(onvifControl.class.getName()).log(Level.SEVERE, null, ex);
-        }
+        wr.write(message.getBytes());
         wr.flush();
         wr.close();
 
@@ -118,16 +159,12 @@ public class onvifControl {
             }
             in.close();
 
-            try {
-                parseXML(response.toString());
-            } catch (ParserConfigurationException | SAXException ex) {
-                Logger.getLogger(onvifControl.class.getName()).log(Level.SEVERE, null, ex);
-            }
+            return response.toString();
         }
-        return responseCode;
+        return null;
     }
 
-    private void parseXML(String message) throws ParserConfigurationException, IOException, SAXException {
+    private void parseXML(String message, String tagname) throws ParserConfigurationException, IOException, SAXException {
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setNamespaceAware(true);
         dbf.setIgnoringElementContentWhitespace(true);
@@ -140,12 +177,21 @@ public class onvifControl {
             System.err.println(e);
             System.exit(1);
         }
-        NodeList list = doc.getElementsByTagName(/*"http://www.onvif.org/ver10/device/wsdl"*/"*"); //* for all
+        NodeList list = doc.getElementsByTagName(tagname);
         //doc.getElementsByTagNameNS(message, message)
         for (int i = 0; i < list.getLength(); i++) {
             System.out.println(list.item(i).getNodeName() + " : " + list.item(i).getTextContent());
 
         }
 
+    }
+
+    private String getCurrentTimeStamp() {
+        SimpleDateFormat dDate = new SimpleDateFormat("yyyy-MM-dd");//dd/MM/yyyy
+        SimpleDateFormat tDate = new SimpleDateFormat("HH:mm:ss");//dd/MM/yyyy
+        Date now = new Date();
+        String strdDate = dDate.format(now);
+        String strtDate = tDate.format(now);
+        return strdDate + "T" + strtDate + "Z";
     }
 }
