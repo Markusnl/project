@@ -15,6 +15,7 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.UnknownHostException;
 import javax.imageio.ImageIO;
+import static javax.xml.bind.DatatypeConverter.printHexBinary;
 import org.opencv.core.Mat;
 
 /**
@@ -28,7 +29,8 @@ class MulticastServer implements Runnable {
     public static int MAX_PACKETS = 255;
     public static int SESSION_START = 128;
     public static int SESSION_END = 64;
-    public static int DATAGRAM_MAX_SIZE = 65507 - HEADER_SIZE;
+    public static int CRYPTO_HEADER = 40;
+    public static int DATAGRAM_MAX_SIZE = 65507 - HEADER_SIZE - CRYPTO_HEADER;
     public static int MAX_SESSION_NUMBER = 255;
     public static String OUTPUT_FORMAT = "jpg";
 
@@ -42,6 +44,11 @@ class MulticastServer implements Runnable {
     @Override
     public synchronized void run() {
         int sessionNumber = 0;
+        Crypto crypt = new Crypto();
+        //byte[] key = crypt.createKey();
+        byte[] key = new byte[]{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+        byte[] nonce;
+        
         while (true) {
             try {
                 wait();
@@ -76,8 +83,18 @@ class MulticastServer implements Runnable {
 
                     /* Copy current slice to byte array */
                     System.arraycopy(imageByteArray, i * DATAGRAM_MAX_SIZE, data, HEADER_SIZE, size);
-                    /* Send multicast packet */
-                    sendImage(data, "224.1.1.1", 4446);
+                    
+                    
+                    /* Encrypt data */
+                    byte[] ciphertext = new byte[size+CRYPTO_HEADER];
+                    nonce= crypt.createNonce();
+                    ciphertext = crypt.encryptWithChaCha(key, nonce, data);
+                    ciphertext = crypt.prependNonce(nonce, ciphertext);
+                    ciphertext = crypt.prependMac(crypt.generateMac(key, ciphertext), ciphertext);
+
+
+                    //send data
+                    sendImage(ciphertext, "224.1.1.1", 4446);
                     /* Leave loop if last slice has been sent */
                     if ((flags & SESSION_END) == SESSION_END) {
                         break;
@@ -142,7 +159,7 @@ class MulticastServer implements Runnable {
             ms.send(dp);
             ret = true;
         } catch (IOException e) {
-            System.out.println("Socket exeption");
+            e.printStackTrace();
             ret = false;
         } finally {
             if (ms != null) {
