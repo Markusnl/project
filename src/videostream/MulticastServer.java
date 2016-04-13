@@ -15,8 +15,8 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.UnknownHostException;
 import javax.imageio.ImageIO;
-import static javax.xml.bind.DatatypeConverter.printHexBinary;
 import org.opencv.core.Mat;
+
 
 /**
  *
@@ -47,6 +47,8 @@ class MulticastServer implements Runnable {
         Crypto crypt = new Crypto();
         //byte[] key = crypt.createKey();
         byte[] key = new byte[]{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+        byte[] key2 = new byte[]{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+        int count =0;
         byte[] nonce;
         
         while (true) {
@@ -84,17 +86,24 @@ class MulticastServer implements Runnable {
                     /* Copy current slice to byte array */
                     System.arraycopy(imageByteArray, i * DATAGRAM_MAX_SIZE, data, HEADER_SIZE, size);
                     
-                    
-                    /* Encrypt data */
+                   
+                    /* Encrypt data currently in test case with 2 keys*/
                     byte[] ciphertext = new byte[size+CRYPTO_HEADER];
                     nonce= crypt.createNonce();
-                    ciphertext = crypt.encryptWithChaCha(key, nonce, data);
+                    ciphertext = (count < 100) ? crypt.encryptWithChaCha(key, nonce, data) : crypt.encryptWithChaCha(key2, nonce, data);
+                    //ciphertext = crypt.encryptWithChaCha(key, nonce, data);
+                    //System.out.println("bmp: "+printHexBinary(ciphertext));
                     ciphertext = crypt.prependNonce(nonce, ciphertext);
-                    ciphertext = crypt.prependMac(crypt.generateMac(key, ciphertext), ciphertext);
-
+                    //ciphertext = crypt.prependMac(crypt.generateMac(key, ciphertext), ciphertext);
+                    ciphertext = (count < 100) ? crypt.prependMac(crypt.generateHMac(key, ciphertext), ciphertext) : crypt.prependMac(crypt.generateHMac(key2, ciphertext), ciphertext);
+                    crypt.verifyMac(key, ciphertext, crypt.getMac(ciphertext), true);
 
                     //send data
                     sendImage(ciphertext, "224.1.1.1", 4446);
+                    count++;
+                    if (count >200)
+                        count = 0;
+             
                     /* Leave loop if last slice has been sent */
                     if ((flags & SESSION_END) == SESSION_END) {
                         break;
@@ -135,6 +144,9 @@ class MulticastServer implements Runnable {
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(image, format, baos);
+        /* test for crypto output
+        File file = new File("test.bmp");
+        ImageIO.write(image, format, file);*/
         return baos.toByteArray();
 
     }

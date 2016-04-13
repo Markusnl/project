@@ -10,19 +10,31 @@ import java.util.logging.Logger;
 import static javax.xml.bind.DatatypeConverter.printHexBinary;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.Digest;
+import org.bouncycastle.crypto.InvalidCipherTextException;
 import org.bouncycastle.crypto.StreamCipher;
 import org.bouncycastle.crypto.digests.SHA256Digest;
+import org.bouncycastle.crypto.engines.AESFastEngine;
 import org.bouncycastle.crypto.engines.ChaChaEngine;
 import org.bouncycastle.crypto.macs.HMac;
+import org.bouncycastle.crypto.modes.GCMBlockCipher;
+import org.bouncycastle.crypto.params.AEADParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.crypto.params.ParametersWithIV;
 
 public class Crypto {
 
-    private final int NONCE_SIZE = 8;
-    private final int HMAC_SIZE = 32;
-    private final int KEY_SIZE = 32;
-    private final int CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+    //cipher enum
+    public final static int AES_256_GCM = 1;
+    public final static int CHACHA20_HMAC = 2;
+    
+    //default AES_256_GCM
+    private int NONCE_SIZE = 12; 
+    private int HMAC_SIZE = 0;
+    private int KEY_SIZE = 32;
+    private int CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+    private int MESSAGE_FORMAT=1;
+    
+    //debug option
     private final boolean debug = false;
 
     /**
@@ -143,8 +155,8 @@ public class Crypto {
     }
 
     /**
-     * Generate a Message Authentication Code from the inputted data and the
-     * given synchronous key
+     * Generate a Hashed Message Authentication Code with SHA256 from the
+     * inputted data and the given synchronous key
      *
      * @param key The synchronous key
      * @param input The data from which to calculate a Message Authentication
@@ -152,7 +164,7 @@ public class Crypto {
      * @return The Message authentication code calculated from the input with
      * the given synchronous key
      */
-    public byte[] generateMac(byte[] key, byte[] input) {
+    public byte[] generateHMac(byte[] key, byte[] input) {
         //initialize MAC
         Digest digest = new SHA256Digest();
         HMac hmac = new HMac(digest);
@@ -193,6 +205,7 @@ public class Crypto {
 
     /**
      * Function that enables crypto class to secure random numbers
+     *
      * @param length The length of the desired random number
      * @return A sequence of random numbers with the provided length
      */
@@ -210,7 +223,9 @@ public class Crypto {
     }
 
     /**
-     * Method for creating a 256-bit secure random key for usage as Message authentication key and data encryption key
+     * Method for creating a KEY_SIZE-bit secure random key for usage as Message
+     * authentication key and data encryption key
+     *
      * @return A 256-bit key
      */
     public byte[] createKey() {
@@ -218,7 +233,9 @@ public class Crypto {
     }
 
     /**
-     * Method that start the reKeying process between sending en receiving clients
+     * Method that start the reKeying process between sending en receiving
+     * clients
+     *
      * @return The new synchronous key between clients
      */
     public byte[] reKey() {
@@ -227,7 +244,8 @@ public class Crypto {
     }
 
     /**
-     * Method for creating a 64-bit secure random Nonce
+     * Method for creating a NONCE_SIZE-bit secure random Nonce
+     *
      * @return A 64-bit nonce
      */
     public byte[] createNonce() {
@@ -236,7 +254,8 @@ public class Crypto {
 
     /**
      * Function to remove prepended MAC from input
-     * @param input Data from with prepended MACH should be removed
+     *
+     * @param input Data from with prepended HMAC should be removed
      * @return input with MAC removed
      */
     private byte[] removeMac(byte[] input) {
@@ -245,4 +264,98 @@ public class Crypto {
         return data;
     }
 
+    /**
+     *
+     * @param key
+     * @param nonce 12 bit nonce!
+     * @param data
+     * @return
+     */
+    public byte[] encryptWithAESGCM(byte[] key, byte[] nonce, byte[] data) {
+        // encrypt
+        AEADParameters parameters = new AEADParameters(
+                new KeyParameter(key), 128, nonce);//, aad);
+        GCMBlockCipher gcmEngine = new GCMBlockCipher(new AESFastEngine());
+        gcmEngine.init(true, parameters);
+
+        byte[] encMsg = new byte[gcmEngine.getOutputSize(data.length)];
+        int encLen = gcmEngine.processBytes(data, 0, data.length, encMsg, 0);
+
+        try {
+            encLen += gcmEngine.doFinal(encMsg, encLen);
+        } catch (IllegalStateException | InvalidCipherTextException ex) {
+            Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+        return prependNonce(nonce, encMsg);
+    }
+
+    /**
+     * 12 bit nonce!
+     *
+     * @param key
+     * @param data
+     * @param nonce
+     * @return 
+     */
+    public byte[] decryptWithAESGCM(byte[] key, byte[] nonce, byte[] data) {
+        AEADParameters parameters = new AEADParameters(
+                new KeyParameter(key), 128, nonce);//, aad);
+        GCMBlockCipher gcmEngine = new GCMBlockCipher(new AESFastEngine());
+        gcmEngine.init(false, parameters);
+
+        byte[] decMsg = new byte[gcmEngine.getOutputSize(data.length)];
+        int decLen = gcmEngine.processBytes(data, 0, data.length,
+                decMsg, 0);
+        try {
+            decLen += gcmEngine.doFinal(decMsg, decLen);
+        } catch (IllegalStateException | InvalidCipherTextException ex) {
+            Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+        return decMsg;
+    }
+
+    public void setCipher(int cipher) {
+        switch (cipher) {
+            case 1:
+                NONCE_SIZE = 12; 
+                HMAC_SIZE = 0;  
+                KEY_SIZE = 32;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                MESSAGE_FORMAT=1;
+                break;
+            case 2:
+                NONCE_SIZE = 8; 
+                HMAC_SIZE = 32;
+                KEY_SIZE = 32;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                MESSAGE_FORMAT=2;
+                break;
+
+            default:
+                System.out.println("invalid cipher choice");
+                break;
+        }
+    }
+    
+    public byte[] createEncryptedMessage(byte[] key, byte[] data){
+        byte[] nonce = createNonce();
+        switch(MESSAGE_FORMAT){
+            case 1:
+                return encryptWithAESGCM(key,nonce,data);    
+             
+            case 2:
+                byte[] tmp=encryptWithChaCha(key, nonce, data);
+                tmp = prependNonce(nonce, tmp);
+                tmp = prependMac(generateHMac(key, tmp), tmp);
+                return tmp;
+             
+            default:
+                System.out.println("wrong message format");
+                System.exit(1);
+        
+        }
+        return null;
+    }
 }
