@@ -15,7 +15,9 @@ import org.bouncycastle.crypto.StreamCipher;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.engines.AESFastEngine;
 import org.bouncycastle.crypto.engines.ChaChaEngine;
+import org.bouncycastle.crypto.generators.Poly1305KeyGenerator;
 import org.bouncycastle.crypto.macs.HMac;
+import org.bouncycastle.crypto.macs.Poly1305;
 import org.bouncycastle.crypto.modes.GCMBlockCipher;
 import org.bouncycastle.crypto.params.AEADParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
@@ -24,16 +26,20 @@ import org.bouncycastle.crypto.params.ParametersWithIV;
 public class Crypto {
 
     //cipher enum
+    public final static int AES_128_GCM = 0;
     public final static int AES_256_GCM = 1;
     public final static int CHACHA20_HMAC = 2;
-    
+    public final static int CHACHA12_HMAC = 3;
+    public final static int CHACHA20_POLY = 4;
+
     //default AES_256_GCM
-    private int NONCE_SIZE = 12; 
+    private int NONCE_SIZE = 12;
     private int HMAC_SIZE = 0;
     private int KEY_SIZE = 32;
     private int CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
-    private int MESSAGE_FORMAT=1;
-    
+    private int MESSAGE_FORMAT = 1;
+    private int CHACHA_ROUNDS = 20;
+
     //debug option
     private final boolean debug = false;
 
@@ -113,7 +119,7 @@ public class Crypto {
             Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
         }
         return outputStream.toByteArray();
-    }
+    }   
 
     /**
      * Method to verify whether the given Message Authentication code is equal
@@ -190,17 +196,88 @@ public class Crypto {
      * @param input The data to be encrypted
      * @return The encrypted or decrypted data
      */
-    public byte[] encryptWithChaCha(byte[] key, byte[] nonce, byte[] input) {
+    private byte[] encryptWithChaCha(byte[] key, byte[] nonce, byte[] input) {
         //create chacha engine with key and nonce
         CipherParameters cp = new KeyParameter(key);
         ParametersWithIV params = new ParametersWithIV(cp, nonce);
-        StreamCipher engine = new ChaChaEngine();
+        StreamCipher engine = new ChaChaEngine(CHACHA_ROUNDS);
         engine.init(true, params);
 
         //encrypt/decrypt and return output
+        byte ciphertxt[] = new byte[input.length];
+        engine.processBytes(input, 0, input.length, ciphertxt, 0);
+
+        byte out[]=prependNonce(nonce,ciphertxt);
+        return prependMac(generateHMac(key,out),out);
+    }
+
+    public byte[] decryptWithChaChaPoly(byte[] key, byte[] input) {
+        ChaChaEngine engine = new ChaChaEngine();
+        Poly1305 mac = new Poly1305();
+        engine.init(true, new ParametersWithIV(new KeyParameter(key), getNonce(input)));
+
+        byte[] computedMac = new byte[16];
+        byte[] receivedMac = new byte[16];
+
+        //initMAC(cipher); -- entire function       
+        byte[] firstBlock = new byte[64];
+        engine.processBytes(firstBlock, 0, firstBlock.length, firstBlock, 0);
+        // NOTE: The BC implementation puts 'r' after 'k'
+        System.arraycopy(firstBlock, 0, firstBlock, 32, 16);
+        KeyParameter macKey = new KeyParameter(firstBlock, 16, 32);
+        Poly1305KeyGenerator.clamp(macKey.getKey());
+        mac.init(macKey);
+        //end function
+
+        System.arraycopy(input, 0, receivedMac, 0, mac.getMacSize());
+
+        byte out[] = new byte[input.length-CRYPTO_HEADER_SIZE];
+        byte data []= getData(input);
+
+        
+        //update mac with data and decrypt data
+        mac.update(data,0,data.length);
+        engine.processBytes(data, 0,data.length, out, 0);
+
+        // check if the two MACs match
+        mac.doFinal(computedMac, 0);
+        if(Arrays.equals(receivedMac, computedMac))
+            return out;
+        else
+            return null;
+    }
+
+    //key, getNonce(data), getData(data));
+    public byte[] encryptWithChaChaPoly(byte[] key, byte[] nonce, byte[] input) {
+        ChaChaEngine engine = new ChaChaEngine();
+        Poly1305 mac = new Poly1305();
+        engine.init(true, new ParametersWithIV(new KeyParameter(key), nonce));
+        byte[] ciphertextMac = new byte[16];
+
+        //initMAC(cipher); -- entire function       
+        byte[] firstBlock = new byte[64];
+        engine.processBytes(firstBlock, 0, firstBlock.length, firstBlock, 0);
+        // NOTE: The BC implementation puts 'r' after 'k'
+        System.arraycopy(firstBlock, 0, firstBlock, 32, 16);
+        KeyParameter macKey = new KeyParameter(firstBlock, 16, 32);
+        Poly1305KeyGenerator.clamp(macKey.getKey());
+        mac.init(macKey);
+        //end function
+
         byte out[] = new byte[input.length];
         engine.processBytes(input, 0, input.length, out, 0);
-        return out;
+        mac.update(out, 0, out.length);
+        mac.doFinal(ciphertextMac, 0);
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        try {
+            outputStream.write(ciphertextMac);
+            outputStream.write(nonce);
+            outputStream.write(out);
+        } catch (IOException ex) {
+            Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return outputStream.toByteArray();
     }
 
     /**
@@ -209,7 +286,7 @@ public class Crypto {
      * @param length The length of the desired random number
      * @return A sequence of random numbers with the provided length
      */
-    private byte[] createRandom(int length) {
+    public byte[] createRandom(int length) {
         //create secure random key and nonce
         byte random[] = new byte[length];
         SecureRandom sr = null;
@@ -271,10 +348,9 @@ public class Crypto {
      * @param data
      * @return
      */
-    public byte[] encryptWithAESGCM(byte[] key, byte[] nonce, byte[] data) {
+    private byte[] encryptWithAESGCM(byte[] key, byte[] nonce, byte[] data) {
         // encrypt
-        AEADParameters parameters = new AEADParameters(
-                new KeyParameter(key), 128, nonce);//, aad);
+        AEADParameters parameters = new AEADParameters(new KeyParameter(key), 128, nonce);//, aad);
         GCMBlockCipher gcmEngine = new GCMBlockCipher(new AESFastEngine());
         gcmEngine.init(true, parameters);
 
@@ -296,9 +372,9 @@ public class Crypto {
      * @param key
      * @param data
      * @param nonce
-     * @return 
+     * @return
      */
-    public byte[] decryptWithAESGCM(byte[] key, byte[] nonce, byte[] data) {
+    private byte[] decryptWithAESGCM(byte[] key, byte[] nonce, byte[] data) {
         AEADParameters parameters = new AEADParameters(
                 new KeyParameter(key), 128, nonce);//, aad);
         GCMBlockCipher gcmEngine = new GCMBlockCipher(new AESFastEngine());
@@ -318,19 +394,47 @@ public class Crypto {
 
     public void setCipher(int cipher) {
         switch (cipher) {
+            case 0:
+                NONCE_SIZE = 12;
+                HMAC_SIZE = 0;
+                KEY_SIZE = 16;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                MESSAGE_FORMAT = 0;
+                break;
+
             case 1:
-                NONCE_SIZE = 12; 
-                HMAC_SIZE = 0;  
+                NONCE_SIZE = 12;
+                HMAC_SIZE = 0;
                 KEY_SIZE = 32;
                 CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
-                MESSAGE_FORMAT=1;
+                MESSAGE_FORMAT = 1;
                 break;
+
             case 2:
-                NONCE_SIZE = 8; 
+                NONCE_SIZE = 8;
                 HMAC_SIZE = 32;
                 KEY_SIZE = 32;
                 CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
-                MESSAGE_FORMAT=2;
+                CHACHA_ROUNDS = 20;
+                MESSAGE_FORMAT = 2;
+                break;
+
+            case 3:
+                NONCE_SIZE = 8;
+                HMAC_SIZE = 32;
+                KEY_SIZE = 32;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                CHACHA_ROUNDS = 12;
+                MESSAGE_FORMAT = 3;
+                break;
+
+            case 4:
+                NONCE_SIZE = 8;
+                HMAC_SIZE = 16;
+                KEY_SIZE = 32;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                CHACHA_ROUNDS = 20;
+                MESSAGE_FORMAT = 4;
                 break;
 
             default:
@@ -338,23 +442,69 @@ public class Crypto {
                 break;
         }
     }
-    
-    public byte[] createEncryptedMessage(byte[] key, byte[] data){
+
+    public byte[] encryptMessage(byte[] key, byte[] data) {
         byte[] nonce = createNonce();
-        switch(MESSAGE_FORMAT){
+        switch (MESSAGE_FORMAT) {
+            case 0:
+                return encryptWithAESGCM(key, nonce, data);
+
             case 1:
-                return encryptWithAESGCM(key,nonce,data);    
-             
+                return encryptWithAESGCM(key, nonce, data);
+
             case 2:
-                byte[] tmp=encryptWithChaCha(key, nonce, data);
-                tmp = prependNonce(nonce, tmp);
-                tmp = prependMac(generateHMac(key, tmp), tmp);
-                return tmp;
-             
+                return encryptWithChaCha(key, nonce, data);
+
+
+            case 3:
+                return encryptWithChaCha(key, nonce, data);
+                              
+             case 4:
+                return encryptWithChaChaPoly(key, nonce, data);              
+
             default:
                 System.out.println("wrong message format");
                 System.exit(1);
-        
+
+        }
+        return null;
+    }
+
+    public byte[] decryptMessage(byte[] key, byte[] data) {
+        switch (MESSAGE_FORMAT) {
+            //AES_126_GCM
+            case 0:
+                return decryptWithAESGCM(key, getNonce(data), getData(data));
+
+            //AES_256_GCM
+            case 1:
+                return decryptWithAESGCM(key, getNonce(data), getData(data));
+
+            //CHACHA20/20_HMAC
+            case 2:
+                if (verifyMac(key, data, getMac(data), true)) {
+                    return encryptWithChaCha(key, getNonce(data), getData(data));
+                } else {
+                    System.out.println("Mac verification failed");
+                    return null;
+                }
+
+            //CHACHA20/20_HMAC
+            case 3:
+                if (verifyMac(key, data, getMac(data), true)) {
+                    return encryptWithChaCha(key, getNonce(data), getData(data));
+                } else {
+                    System.out.println("Mac verification failed");
+                    return null;
+                }
+                
+            case 4:
+                return decryptWithChaChaPoly(key,data);
+
+            default:
+                System.out.println("wrong message format");
+                System.exit(1);
+
         }
         return null;
     }

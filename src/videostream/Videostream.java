@@ -1,6 +1,8 @@
 package videostream;
 
 import static java.lang.Thread.sleep;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
 import org.opencv.core.*;
 import org.opencv.videoio.*;
 
@@ -15,6 +17,7 @@ public class Videostream {
     public static void main(String[] args){
         Videostream stream = new Videostream();
         stream.testCrypto();
+
         /*onvifControl onvifcamera = new onvifControl();
         try {
             System.out.println("Attempting autoconnect on IP:PORT");
@@ -25,7 +28,7 @@ public class Videostream {
             Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);     
         }*/
          
-       
+       //stream.displayVideo("C:\\Libs\\opencv\\sources\\samples\\cpp\\tutorial_code\\HighGUI\\video-input-psnr-ssim\\video\\Megamind.avi");
         //stream.displayVideo("admin:admin@http://85.173.183.13/image1");
         //stream.displayVideo("http://d3macfshcnzosd.cloudfront.net/047802938_main_xxl.mp4");
         //stream.displayVideo("http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4");
@@ -109,28 +112,71 @@ public class Videostream {
 
     }
     
-    public void testCrypto() {
+    public void testCrypto() {  
         Crypto crypt = new Crypto();
-        crypt.setCipher(Crypto.AES_256_GCM);
-        byte key[] = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".getBytes();
-        byte[] nonce=crypt.createNonce();
-        byte[] data ="wat een mooi bericht".getBytes();
+        Random r = new Random();
+        byte key[];
+        //byte key[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".getBytes();
+        double samples=10000;
+        long runTime0 = 0;
+        long runTime1 = 0;
+        long runTime2 = 0;
+        long runTime3 = 0;
+        long runTime4 = 0;
+        
+        for(int i=0;i<samples;i++){
+            //generate random data of random size to test
+            byte[] data =crypt.createRandom(r.nextInt(MulticastServer.DATAGRAM_MAX_SIZE));
+            
+            //start AES GCM performance test
+            crypt.setCipher(Crypto.AES_128_GCM);
+            key = crypt.createKey();
+            long startTime0 = System.nanoTime();
+            byte[] ciphertxt0 = crypt.encryptMessage(key, data);
+            crypt.decryptMessage(key, ciphertxt0);
+            runTime0+= System.nanoTime() - startTime0;      
+            
+            //start AES GCM performance test
+            crypt.setCipher(Crypto.AES_256_GCM);
+            key = crypt.createKey();
+            long startTime1 = System.nanoTime();
+            byte[] ciphertxt1 = crypt.encryptMessage(key, data);
+            crypt.decryptMessage(key, ciphertxt1);
+            runTime1+= System.nanoTime() - startTime1;
 
-        //test encrypt AES GCM
-        byte[] txt =crypt.encryptWithAESGCM(key, nonce, data); 
+            //start Chacha20/20 performance test
+            crypt.setCipher(Crypto.CHACHA20_HMAC);
+            key = crypt.createKey();
+            long startTime2 = System.nanoTime();
+            byte[] ciphertxt2 = crypt.encryptMessage(key, data);
+            crypt.decryptMessage(key, ciphertxt2);
+            runTime2+= System.nanoTime() - startTime2;
+            
+            //start ChaCha20/12 performance test
+            crypt.setCipher(Crypto.CHACHA12_HMAC);
+            key = crypt.createKey();
+            long startTime3 = System.nanoTime();
+            byte[] ciphertxt3 = crypt.encryptMessage(key, data);
+            crypt.decryptMessage(key, ciphertxt3);
+            runTime3+= System.nanoTime() - startTime3;
+            
+            //start ChaCha20/12 performance test
+            crypt.setCipher(Crypto.CHACHA20_POLY);
+            key = crypt.createKey();
+            long startTime4 = System.nanoTime();
+            byte[] ciphertxt4 = crypt.encryptMessage(key, data);
+            crypt.decryptMessage(key, ciphertxt4);
+            runTime4+= System.nanoTime() - startTime4;
+        }
+        System.out.println("AVG time AES128GCM: "+TimeUnit.NANOSECONDS.toMillis(runTime0)/samples+" ms");
+        System.out.println("AVG time AES256GCM: "+TimeUnit.NANOSECONDS.toMillis(runTime1)/samples+" ms");
+        System.out.println("AVG time CHA20/20HMAC: "+TimeUnit.NANOSECONDS.toMillis(runTime2)/samples+" ms");
+        System.out.println("AVG time CHA20/12HMAC: "+TimeUnit.NANOSECONDS.toMillis(runTime3)/samples+" ms");
+        System.out.println("AVG time CHA20/20POLY: "+TimeUnit.NANOSECONDS.toMillis(runTime4)/samples+" ms");
+        System.out.println("Cha20/20HMAC is "+((TimeUnit.NANOSECONDS.toMillis(runTime1)-TimeUnit.NANOSECONDS.toMillis(runTime2))/(double)TimeUnit.NANOSECONDS.toMillis(runTime2)*100)+ " % faster than AES256GCM");
+        System.out.println("Cha20/12HMAC is "+((TimeUnit.NANOSECONDS.toMillis(runTime0)-TimeUnit.NANOSECONDS.toMillis(runTime3))/(double)TimeUnit.NANOSECONDS.toMillis(runTime3)*100)+ " % faster than AES128GCM");
+        System.out.println("Cha20/12HMAC is "+((TimeUnit.NANOSECONDS.toMillis(runTime2)-TimeUnit.NANOSECONDS.toMillis(runTime3))/(double)TimeUnit.NANOSECONDS.toMillis(runTime3)*100)+ " % faster than ChaCha20/20");
+        System.out.println("Cha20/20POLY is "+((TimeUnit.NANOSECONDS.toMillis(runTime1)-TimeUnit.NANOSECONDS.toMillis(runTime4))/(double)TimeUnit.NANOSECONDS.toMillis(runTime4)*100)+ " % faster than AES256GCM");
 
-        //test decrypt AES GCM
-        System.out.println(new String(crypt.decryptWithAESGCM(key,crypt.getNonce(txt),crypt.getData(txt))));
-
-        //test encrypt ChaCha20
-        crypt.setCipher(Crypto.CHACHA20_HMAC);
-        byte[] nonce1 = crypt.createNonce();
-        byte[] txt1=crypt.encryptWithChaCha(key, nonce1, data);
-        txt1 = crypt.prependNonce(nonce1, txt1);
-        txt1 = crypt.prependMac(crypt.generateHMac(key, txt1), txt1);
-
-        //test decrypt ChaCha20
-        crypt.verifyMac(key, txt1, crypt.getMac(txt1), true);
-        System.out.println(new String(crypt.encryptWithChaCha(key,crypt.getNonce(txt1),crypt.getData(txt1))));  
     }
 }
