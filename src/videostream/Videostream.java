@@ -17,7 +17,7 @@ public class Videostream {
     public static void main(String[] args){
         Videostream stream = new Videostream();
         stream.testCrypto();
-
+    
         /*onvifControl onvifcamera = new onvifControl();
         try {
             System.out.println("Attempting autoconnect on IP:PORT");
@@ -118,16 +118,18 @@ public class Videostream {
         byte key[];
         //byte key[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".getBytes();
         double samples=10000;
+        double avglength=0;
         long runTime0 = 0;
         long runTime1 = 0;
         long runTime2 = 0;
         long runTime3 = 0;
         long runTime4 = 0;
+        long runTime5 = 0;
         
         for(int i=0;i<samples;i++){
             //generate random data of random size to test
-            byte[] data =crypt.createRandom(r.nextInt(MulticastServer.DATAGRAM_MAX_SIZE));
-            
+            byte[] data =crypt.createRandom(10000);//r.nextInt(MulticastServer.DATAGRAM_MAX_SIZE));
+            avglength+=data.length;
             //start AES GCM performance test
             crypt.setCipher(Crypto.AES_128_GCM);
             key = crypt.createKey();
@@ -135,6 +137,7 @@ public class Videostream {
             byte[] ciphertxt0 = crypt.encryptMessage(key, data);
             crypt.decryptMessage(key, ciphertxt0);
             runTime0+= System.nanoTime() - startTime0;      
+            
             
             //start AES GCM performance test
             crypt.setCipher(Crypto.AES_256_GCM);
@@ -167,12 +170,22 @@ public class Videostream {
             byte[] ciphertxt4 = crypt.encryptMessage(key, data);
             crypt.decryptMessage(key, ciphertxt4);
             runTime4+= System.nanoTime() - startTime4;
+            
+            crypt.setCipher(Crypto.AES_256_CTR_HMAC);
+            key = crypt.createKey();
+            long startTime5 = System.nanoTime();
+            byte[] ciphertxt5 = crypt.encryptMessage(key, data);
+            crypt.decryptMessage(key, ciphertxt5);
+            runTime5+= System.nanoTime() - startTime5;
+            
         }
+        System.out.println("avg message length: "+avglength/samples);
         System.out.println("AVG time AES128GCM: "+TimeUnit.NANOSECONDS.toMillis(runTime0)/samples+" ms");
         System.out.println("AVG time AES256GCM: "+TimeUnit.NANOSECONDS.toMillis(runTime1)/samples+" ms");
         System.out.println("AVG time CHA20/20HMAC: "+TimeUnit.NANOSECONDS.toMillis(runTime2)/samples+" ms");
         System.out.println("AVG time CHA20/12HMAC: "+TimeUnit.NANOSECONDS.toMillis(runTime3)/samples+" ms");
         System.out.println("AVG time CHA20/20POLY: "+TimeUnit.NANOSECONDS.toMillis(runTime4)/samples+" ms");
+        System.out.println("AVG time AES256CTRHMAC: "+TimeUnit.NANOSECONDS.toMillis(runTime5)/samples+" ms");
         System.out.println("Cha20/20HMAC is "+((TimeUnit.NANOSECONDS.toMillis(runTime1)-TimeUnit.NANOSECONDS.toMillis(runTime2))/(double)TimeUnit.NANOSECONDS.toMillis(runTime2)*100)+ " % faster than AES256GCM");
         System.out.println("Cha20/12HMAC is "+((TimeUnit.NANOSECONDS.toMillis(runTime0)-TimeUnit.NANOSECONDS.toMillis(runTime3))/(double)TimeUnit.NANOSECONDS.toMillis(runTime3)*100)+ " % faster than AES128GCM");
         System.out.println("Cha20/12HMAC is "+((TimeUnit.NANOSECONDS.toMillis(runTime2)-TimeUnit.NANOSECONDS.toMillis(runTime3))/(double)TimeUnit.NANOSECONDS.toMillis(runTime3)*100)+ " % faster than ChaCha20/20");
