@@ -13,6 +13,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.opencv.core.*;
 import org.opencv.videoio.*;
+import static java.lang.Thread.sleep;
 
 public class Videostream {
 
@@ -25,8 +26,18 @@ public class Videostream {
         Videostream stream = new Videostream();
         //stream.testCrypto();
         Crypto crypt = new Crypto();
+        Asymmetric asym = new Asymmetric();
         try {
-            crypt.runDemo();
+            System.out.println("TLS");
+            asym.runDemo();
+            System.out.println("DH");
+            asym.DH();
+            System.out.println("DHE");
+            asym.DHE();
+            System.out.println("ECDH");
+            asym.ECDH();
+            System.out.println("ECDHE");
+            asym.ECDHE();
         } catch (Exception ex) {
             Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);
         }    
