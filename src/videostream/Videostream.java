@@ -22,7 +22,7 @@ public class Videostream {
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
     }
 
-    public static void main(String[] args) {
+    //public static void main(String[] args) {
         Videostream stream = new Videostream();
         //stream.testCrypto();
         Crypto crypt = new Crypto();

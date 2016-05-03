@@ -251,7 +251,7 @@ public class Asymmetric {
 
         SSLEngineResult sendResult;
         SSLEngineResult recvResult;
-
+        
         while (!isEngineClosed(clientEngine) || !isEngineClosed(serverEngine)) {
             log("================");
             sendResult = clientEngine.wrap(clientOut, cTOs);

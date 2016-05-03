@@ -47,9 +47,7 @@ class MulticastServer implements Runnable {
         int sessionNumber = 0;
         Crypto crypt = new Crypto();
         //byte[] key = crypt.createKey();
-        byte[] key = new byte[]{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-        byte[] key2 = new byte[]{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-        int count =0;
+        byte[] key = null;//new byte[]{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
         
         while (true) {
             try {
@@ -88,6 +86,15 @@ class MulticastServer implements Runnable {
                     
 
                     crypt.setCipher(Crypto.CHACHA20_POLY);
+                    //start key exchange
+                    if (key==null)
+                    {
+                        ServerRunnable serverRunnable = new ServerRunnable();
+                        Thread server = new Thread(serverRunnable);
+                        server.start();
+                        
+                        key = serverRunnable.getKey();     
+                    }
                     byte[] ciphertext = crypt.encryptMessage(key, data);
 
 

@@ -22,7 +22,7 @@ import org.xml.sax.SAXException;
 import org.w3c.dom.NodeList;
 import java.util.Base64;
 
-public class onvifControl {
+public class OnvifControl {
 
     private String envelopeMessageEnd() {
         return "</soap:Envelope>";
@@ -52,7 +52,7 @@ public class onvifControl {
         try {
             md = MessageDigest.getInstance("SHA-1");
         } catch (NoSuchAlgorithmException ex) {
-            Logger.getLogger(onvifControl.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(OnvifControl.class.getName()).log(Level.SEVERE, null, ex);
         }
 
         //concatenate nonce + time + password
