@@ -16,6 +16,7 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLSession;
+import static javax.xml.bind.DatatypeConverter.printHexBinary;
 
 /**
  * An SSL/TLS server, that will listen to a specific address and port and serve SSL/TLS connections
@@ -50,6 +51,7 @@ public class NioSslServer extends NioSslPeer {
      * A part of Java NIO that will be used to serve all connections to the server in one thread.
      */
     private Selector selector;
+    private byte[] response;
 
 
     /**
@@ -195,7 +197,7 @@ public class NioSslServer extends NioSslPeer {
                 }
             }
             //create key from message request here, write back and give to crypto
-            write(socketChannel, engine, "Hello! I am your server! This will be the symmetric encryption key: afagfsrfsdg");
+            write(socketChannel, engine, response);
 
         } else if (bytesRead < 0) {
             System.out.println("Received end of stream. Will try to close connection with client...");
@@ -211,13 +213,13 @@ public class NioSslServer extends NioSslPeer {
      * @param message - the message to be sent.
      * @throws IOException if an I/O error occurs to the socket channel.
      */
-    @Override
-    protected void write(SocketChannel socketChannel, SSLEngine engine, String message) throws IOException {
+    //@Override
+    protected void write(SocketChannel socketChannel, SSLEngine engine, byte[] message) throws IOException {
 
         System.out.println("About to write to a client...");
 
         myAppData.clear();
-        myAppData.put(message.getBytes());
+        myAppData.put(message);
         myAppData.flip();
         while (myAppData.hasRemaining()) {
             // The loop has a meaning for (outgoing) messages larger than 16KB.
@@ -230,7 +232,7 @@ public class NioSslServer extends NioSslPeer {
                 while (myNetData.hasRemaining()) {
                     socketChannel.write(myNetData);
                 }
-                System.out.println("Message sent to the client: " + message);
+                System.out.println("Message sent to the client: " + printHexBinary(message));
                 break;
             case BUFFER_OVERFLOW:
                 myNetData = enlargePacketBuffer(engine, myNetData);
@@ -255,8 +257,7 @@ public class NioSslServer extends NioSslPeer {
         return active;
     }
     
-    protected byte[] getKey(){
-        return key;
+    public void setResponse(byte[] response){
+        this.response = response;
     }
-    
 }

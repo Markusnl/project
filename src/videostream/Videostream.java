@@ -1,16 +1,7 @@
 package videostream;
 
-import java.io.IOException;
-import static java.lang.Thread.sleep;
-import java.security.KeyManagementException;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.UnrecoverableKeyException;
-import java.security.cert.CertificateException;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import org.opencv.core.*;
 import org.opencv.videoio.*;
 import static java.lang.Thread.sleep;
@@ -22,14 +13,14 @@ public class Videostream {
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
     }
 
-    //public static void main(String[] args) {
+    public static void main(String[] args) {
         Videostream stream = new Videostream();
         //stream.testCrypto();
         Crypto crypt = new Crypto();
-        Asymmetric asym = new Asymmetric();
+        crypt.exchangeKeyServer();
+        
+        /*Asymmetric asym = new Asymmetric();
         try {
-            System.out.println("TLS");
-            asym.runDemo();
             System.out.println("DH");
             asym.DH();
             System.out.println("DHE");
@@ -40,7 +31,7 @@ public class Videostream {
             asym.ECDHE();
         } catch (Exception ex) {
             Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);
-        }    
+        }    */
             /*onvifControl onvifcamera = new onvifControl();
             try {
             System.out.println("Attempting autoconnect on IP:PORT");
@@ -125,48 +116,48 @@ public class Videostream {
             avglength += data.length;
             //start AES GCM performance test
             crypt.setCipher(Crypto.AES_128_GCM);
-            key = crypt.createKey();
             long startTime0 = System.nanoTime();
-            byte[] ciphertxt0 = crypt.encryptMessage(key, data);
+            byte[] ciphertxt0 = crypt.encryptMessage(data);
+            key = crypt.getKey();
             crypt.decryptMessage(key, ciphertxt0);
             runTime0 += System.nanoTime() - startTime0;
 
             //start AES GCM performance test
-            crypt.setCipher(Crypto.AES_256_GCM);
-            key = crypt.createKey();
+            crypt.setCipher(Crypto.AES_256_GCM);   
             long startTime1 = System.nanoTime();
-            byte[] ciphertxt1 = crypt.encryptMessage(key, data);
+            byte[] ciphertxt1 = crypt.encryptMessage(data);
+            key = crypt.getKey();
             crypt.decryptMessage(key, ciphertxt1);
             runTime1 += System.nanoTime() - startTime1;
 
             //start Chacha20/20 performance test
             crypt.setCipher(Crypto.CHACHA20_HMAC);
-            key = crypt.createKey();
             long startTime2 = System.nanoTime();
-            byte[] ciphertxt2 = crypt.encryptMessage(key, data);
+            byte[] ciphertxt2 = crypt.encryptMessage(data);
+            key = crypt.getKey();
             crypt.decryptMessage(key, ciphertxt2);
             runTime2 += System.nanoTime() - startTime2;
 
             //start ChaCha20/12 performance test
             crypt.setCipher(Crypto.CHACHA12_HMAC);
-            key = crypt.createKey();
             long startTime3 = System.nanoTime();
-            byte[] ciphertxt3 = crypt.encryptMessage(key, data);
+            byte[] ciphertxt3 = crypt.encryptMessage(data);
+            key = crypt.getKey();
             crypt.decryptMessage(key, ciphertxt3);
             runTime3 += System.nanoTime() - startTime3;
 
             //start ChaCha20/12 performance test
             crypt.setCipher(Crypto.CHACHA20_POLY);
-            key = crypt.createKey();
             long startTime4 = System.nanoTime();
-            byte[] ciphertxt4 = crypt.encryptMessage(key, data);
+            byte[] ciphertxt4 = crypt.encryptMessage(data);
+            key = crypt.getKey();
             crypt.decryptMessage(key, ciphertxt4);
             runTime4 += System.nanoTime() - startTime4;
 
             crypt.setCipher(Crypto.AES_256_CTR_HMAC);
-            key = crypt.createKey();
             long startTime5 = System.nanoTime();
-            byte[] ciphertxt5 = crypt.encryptMessage(key, data);
+            byte[] ciphertxt5 = crypt.encryptMessage(data);
+            key = crypt.getKey();
             crypt.decryptMessage(key, ciphertxt5);
             runTime5 += System.nanoTime() - startTime5;
 

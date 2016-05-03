@@ -46,8 +46,6 @@ class MulticastServer implements Runnable {
     public synchronized void run() {
         int sessionNumber = 0;
         Crypto crypt = new Crypto();
-        //byte[] key = crypt.createKey();
-        byte[] key = null;//new byte[]{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
         
         while (true) {
             try {
@@ -86,21 +84,9 @@ class MulticastServer implements Runnable {
                     
 
                     crypt.setCipher(Crypto.CHACHA20_POLY);
-                    //start key exchange
-                    if (key==null)
-                    {
-                        ServerRunnable serverRunnable = new ServerRunnable();
-                        Thread server = new Thread(serverRunnable);
-                        server.start();
-                        
-                        key = serverRunnable.getKey();     
-                    }
-                    byte[] ciphertext = crypt.encryptMessage(key, data);
-
-
-                 
+                    byte[] ciphertext = crypt.encryptMessage(data);
+               
                     //send data
-                    
                     sendImage(ciphertext, "224.1.1.1", 4446);
              
                     /* Leave loop if last slice has been sent */

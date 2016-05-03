@@ -25,8 +25,6 @@ import org.bouncycastle.crypto.params.AEADParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.crypto.params.ParametersWithIV;
 
-
-
 public class Crypto {
 
     //cipher enum
@@ -45,8 +43,15 @@ public class Crypto {
     private int MESSAGE_FORMAT = 1;
     private int CHACHA_ROUNDS = 20;
 
+    //symetric encryption key
+    private static byte[] key;
+
     //debug option
     private final boolean debug = false;
+
+    //networking - own ip address and prefered port
+    public final String SERVER_IP = "130.161.177.117";
+    public final int COMMUNICATION_PORT = 5000;
 
     /**
      * Returns the Message Authentication Code from the input. By default it
@@ -311,7 +316,8 @@ public class Crypto {
      * @return A 256-bit key
      */
     public byte[] createKey() {
-        return createRandom(KEY_SIZE);
+        key = createRandom(KEY_SIZE);
+        return key;
     }
 
     /**
@@ -455,8 +461,9 @@ public class Crypto {
         }
     }
 
-    public byte[] encryptMessage(byte[] key, byte[] data) {
+    public byte[] encryptMessage(byte[] data) {
         byte[] nonce = createNonce();
+        key = createKey();
         switch (MESSAGE_FORMAT) {
             case 0:
                 return encryptWithAESGCM(key, nonce, data);
@@ -547,6 +554,32 @@ public class Crypto {
         byte[] out = new byte[data.length];
         ctrEngine.processBytes(data, 0, data.length, out, 0);
         return out;
+    }
+
+    //returns symmetric crypto key -- debug purpose only remove this
+    public byte[] getKey() {
+        return key;
+    }
+    
+    public static void setKey(byte[] key){
+        Crypto.key = key;
+    }
+    
+
+    //-------------asymmetric encryption part------------------------//
+    public void exchangeKeyServer() {
+        ServerRunnable serverRunnable = new ServerRunnable(SERVER_IP, COMMUNICATION_PORT);
+        serverRunnable.setResponse(prependMac(("4:".getBytes()), createKey()));
+        Thread server = new Thread(serverRunnable);
+        server.start();
+    }
+
+    public void exchangeKeyClient(String targetip) throws Exception {
+        NioSslClient client = new NioSslClient("TLSv1.2", targetip, COMMUNICATION_PORT);
+        client.connect();
+        client.write("0:1:2:3:4:5".getBytes());
+        client.read();
+        client.shutdown();
     }
 
 }

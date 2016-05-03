@@ -84,7 +84,7 @@ public abstract class NioSslPeer {
 
     protected abstract void read(SocketChannel socketChannel, SSLEngine engine) throws Exception;
 
-    protected abstract void write(SocketChannel socketChannel, SSLEngine engine, String message) throws Exception;
+    protected abstract void write(SocketChannel socketChannel, SSLEngine engine, byte[] message) throws Exception;
 
     /**
      * Implements the handshake protocol between two peers, required for the establishment of the SSL/TLS connection.

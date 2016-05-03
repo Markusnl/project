@@ -1,63 +1,72 @@
 package videostream;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.security.SecureRandom;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLSession;
+import static javax.xml.bind.DatatypeConverter.printHexBinary;
 
 /**
  * An SSL/TLS client that connects to a server using its IP address and port.
  * <p/>
- * After initialization of a {@link NioSslClient} object, {@link NioSslClient#connect()} should be called,
- * in order to establish connection with the server.
+ * After initialization of a {@link NioSslClient} object,
+ * {@link NioSslClient#connect()} should be called, in order to establish
+ * connection with the server.
  * <p/>
- * When the connection between the client and the object is established, {@link NioSslClient} provides
- * a public write and read method, in order to communicate with its peer. 
+ * When the connection between the client and the object is established,
+ * {@link NioSslClient} provides a public write and read method, in order to
+ * communicate with its peer.
  *
  * @author <a href="mailto:travelling.with.code@gmail.com">Alex</a>
  */
 public class NioSslClient extends NioSslPeer {
-	
+
     /**
      * The remote address of the server this client is configured to connect to.
      */
-	private String remoteAddress;
+    private String remoteAddress;
 
-	/**
-	 * The port of the server this client is configured to connect to.
-	 */
-	private int port;
+    /**
+     * The port of the server this client is configured to connect to.
+     */
+    private int port;
 
-	/**
-	 * The engine that will be used to encrypt/decrypt data between this client and the server.
-	 */
+    /**
+     * The engine that will be used to encrypt/decrypt data between this client
+     * and the server.
+     */
     private SSLEngine engine;
 
     /**
-     * The socket channel that will be used as the transport link between this client and the server.
+     * The socket channel that will be used as the transport link between this
+     * client and the server.
      */
     private SocketChannel socketChannel;
 
-
     /**
-     * Initiates the engine to run as a client using peer information, and allocates space for the
-     * buffers that will be used by the engine.
+     * Initiates the engine to run as a client using peer information, and
+     * allocates space for the buffers that will be used by the engine.
      *
-     * @param protocol The SSL/TLS protocol to be used. Java 1.6 will only run with up to TLSv1 protocol. Java 1.7 or higher also supports TLSv1.1 and TLSv1.2 protocols.
+     * @param protocol The SSL/TLS protocol to be used. Java 1.6 will only run
+     * with up to TLSv1 protocol. Java 1.7 or higher also supports TLSv1.1 and
+     * TLSv1.2 protocols.
      * @param remoteAddress The IP address of the peer.
      * @param port The peer's port that will be used.
      * @throws Exception
      */
-    public NioSslClient(String protocol, String remoteAddress, int port) throws Exception  {
-    	this.remoteAddress = remoteAddress;
-    	this.port = port;
+    public NioSslClient(String protocol, String remoteAddress, int port) throws Exception {
+        this.remoteAddress = remoteAddress;
+        this.port = port;
 
         SSLContext context = SSLContext.getInstance(protocol);
         context.init(createKeyManagers("certs/client.jks", "storepass", "keypass"), createTrustManagers("certs/trustedCerts.jks", "storepass"), new SecureRandom());
@@ -72,21 +81,23 @@ public class NioSslClient extends NioSslPeer {
     }
 
     /**
-     * Opens a socket channel to communicate with the configured server and tries to complete the handshake protocol.
+     * Opens a socket channel to communicate with the configured server and
+     * tries to complete the handshake protocol.
      *
-     * @return True if client established a connection with the server, false otherwise.
+     * @return True if client established a connection with the server, false
+     * otherwise.
      * @throws Exception
      */
     public boolean connect() throws Exception {
-    	socketChannel = SocketChannel.open();
-    	socketChannel.configureBlocking(false);
-    	socketChannel.connect(new InetSocketAddress(remoteAddress, port));
-    	while (!socketChannel.finishConnect()) {
-    		// can do something here...
-    	}
+        socketChannel = SocketChannel.open();
+        socketChannel.configureBlocking(false);
+        socketChannel.connect(new InetSocketAddress(remoteAddress, port));
+        while (!socketChannel.finishConnect()) {
+            // can do something here...
+        }
 
-    	engine.beginHandshake();
-    	return doHandshake(socketChannel, engine);
+        engine.beginHandshake();
+        return doHandshake(socketChannel, engine);
     }
 
     /**
@@ -95,26 +106,28 @@ public class NioSslClient extends NioSslPeer {
      * @param message - message to be sent to the server.
      * @throws IOException if an I/O error occurs to the socket channel.
      */
-    public void write(String message) throws IOException {
+    public void write(byte[] message) throws IOException {
         write(socketChannel, engine, message);
     }
 
     /**
-     * Implements the write method that sends a message to the server the client is connected to,
-     * but should not be called by the user, since socket channel and engine are inner class' variables.
+     * Implements the write method that sends a message to the server the client
+     * is connected to, but should not be called by the user, since socket
+     * channel and engine are inner class' variables.
      * {@link NioSslClient#write(String)} should be called instead.
      *
      * @param message - message to be sent to the server.
-     * @param engine - the engine used for encryption/decryption of the data exchanged between the two peers.
+     * @param engine - the engine used for encryption/decryption of the data
+     * exchanged between the two peers.
      * @throws IOException if an I/O error occurs to the socket channel.
      */
     @Override
-    protected void write(SocketChannel socketChannel, SSLEngine engine, String message) throws IOException {
+    protected void write(SocketChannel socketChannel, SSLEngine engine, byte[] message) throws IOException {
 
         System.out.println("About to write to the server...");
 
         myAppData.clear();
-        myAppData.put(message.getBytes());
+        myAppData.put(message);
         myAppData.flip();
         while (myAppData.hasRemaining()) {
             // The loop has a meaning for (outgoing) messages larger than 16KB.
@@ -122,23 +135,23 @@ public class NioSslClient extends NioSslPeer {
             myNetData.clear();
             SSLEngineResult result = engine.wrap(myAppData, myNetData);
             switch (result.getStatus()) {
-            case OK:
-                myNetData.flip();
-                while (myNetData.hasRemaining()) {
-                    socketChannel.write(myNetData);
-                }
-                System.out.println("Message sent to the server: " + message);
-                break;
-            case BUFFER_OVERFLOW:
-                myNetData = enlargePacketBuffer(engine, myNetData);
-                break;
-            case BUFFER_UNDERFLOW:
-                throw new SSLException("Buffer underflow occured after a wrap. I don't think we should ever get here.");
-            case CLOSED:
-                closeConnection(socketChannel, engine);
-                return;
-            default:
-                throw new IllegalStateException("Invalid SSL status: " + result.getStatus());
+                case OK:
+                    myNetData.flip();
+                    while (myNetData.hasRemaining()) {
+                        socketChannel.write(myNetData);
+                    }
+                    System.out.println("Message sent to the server: " + printHexBinary(message));
+                    break;
+                case BUFFER_OVERFLOW:
+                    myNetData = enlargePacketBuffer(engine, myNetData);
+                    break;
+                case BUFFER_UNDERFLOW:
+                    throw new SSLException("Buffer underflow occured after a wrap. I don't think we should ever get here.");
+                case CLOSED:
+                    closeConnection(socketChannel, engine);
+                    return;
+                default:
+                    throw new IllegalStateException("Invalid SSL status: " + result.getStatus());
             }
         }
 
@@ -154,19 +167,22 @@ public class NioSslClient extends NioSslPeer {
     }
 
     /**
-     * Will wait for response from the remote peer, until it actually gets something.
-     * Uses {@link SocketChannel#read(ByteBuffer)}, which is non-blocking, and if
-     * it gets nothing from the peer, waits for {@code waitToReadMillis} and tries again.
+     * Will wait for response from the remote peer, until it actually gets
+     * something. Uses {@link SocketChannel#read(ByteBuffer)}, which is
+     * non-blocking, and if it gets nothing from the peer, waits for
+     * {@code waitToReadMillis} and tries again.
      * <p/>
-     * Just like {@link NioSslClient#read(SocketChannel, SSLEngine)} it uses inner class' socket channel
-     * and engine and should not be used by the client. {@link NioSslClient#read()} should be called instead.
-     * 
+     * Just like {@link NioSslClient#read(SocketChannel, SSLEngine)} it uses
+     * inner class' socket channel and engine and should not be used by the
+     * client. {@link NioSslClient#read()} should be called instead.
+     *
      * @param message - message to be sent to the server.
-     * @param engine - the engine used for encryption/decryption of the data exchanged between the two peers.
+     * @param engine - the engine used for encryption/decryption of the data
+     * exchanged between the two peers.
      * @throws Exception
      */
     @Override
-    protected void read(SocketChannel socketChannel, SSLEngine engine) throws Exception  {
+    protected void read(SocketChannel socketChannel, SSLEngine engine) throws Exception {
 
         System.out.println("About to read from the server...");
 
@@ -181,22 +197,23 @@ public class NioSslClient extends NioSslPeer {
                     peerAppData.clear();
                     SSLEngineResult result = engine.unwrap(peerNetData, peerAppData);
                     switch (result.getStatus()) {
-                    case OK:
-                        peerAppData.flip();
-                        System.out.println("Server response: " + new String(peerAppData.array()));
-                        exitReadLoop = true;
-                        break;
-                    case BUFFER_OVERFLOW:
-                        peerAppData = enlargeApplicationBuffer(engine, peerAppData);
-                        break;
-                    case BUFFER_UNDERFLOW:
-                        peerNetData = handleBufferUnderflow(engine, peerNetData);
-                        break;
-                    case CLOSED:
-                        closeConnection(socketChannel, engine);
-                        return;
-                    default:
-                        throw new IllegalStateException("Invalid SSL status: " + result.getStatus());
+                        case OK:
+                            peerAppData.flip();
+                            System.out.println("Server response: " + new String(peerAppData.array()));
+                            parseMessage(peerAppData.array());
+                            exitReadLoop = true;
+                            break;
+                        case BUFFER_OVERFLOW:
+                            peerAppData = enlargeApplicationBuffer(engine, peerAppData);
+                            break;
+                        case BUFFER_UNDERFLOW:
+                            peerNetData = handleBufferUnderflow(engine, peerNetData);
+                            break;
+                        case CLOSED:
+                            closeConnection(socketChannel, engine);
+                            return;
+                        default:
+                            throw new IllegalStateException("Invalid SSL status: " + result.getStatus());
                     }
                 }
             } else if (bytesRead < 0) {
@@ -208,7 +225,8 @@ public class NioSslClient extends NioSslPeer {
     }
 
     /**
-     * Should be called when the client wants to explicitly close the connection to the server.
+     * Should be called when the client wants to explicitly close the connection
+     * to the server.
      *
      * @throws IOException if an I/O error occurs to the socket channel.
      */
@@ -217,6 +235,47 @@ public class NioSslClient extends NioSslPeer {
         closeConnection(socketChannel, engine);
         executor.shutdown();
         System.out.println("Goodbye!");
+    }
+
+    private void parseMessage(byte[] array) {
+        String message = null;
+        byte[] key = null;
+        try {
+            message = new String(array, "UTF-8");
+        } catch (UnsupportedEncodingException ex) {
+            Logger.getLogger(NioSslClient.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        //AES_128_GCM = 0;
+        if (message.startsWith("0:")) {
+            key = new byte[16];
+            System.arraycopy(array, 3, key, 0, key.length);
+        }
+        //AES_256_GCM = 1;
+        if (message.startsWith("1:")) {
+            key = new byte[32];
+            System.arraycopy(array, 3, key, 0, key.length);
+        }
+        //CHACHA20_HMAC = 2;
+        if (message.startsWith("2:")) {
+            key = new byte[32];
+            System.arraycopy(array, 3, key, 0, key.length);
+        }
+        //CHACHA12_HMAC = 3;
+        if (message.startsWith("3:")) {
+            key = new byte[32];
+            System.arraycopy(array, 3, key, 0, key.length);
+        }
+        //CHACHA20_POLY = 4;
+        if (message.startsWith("4:")) {
+            key = new byte[32];
+            System.arraycopy(array, 3, key, 0, key.length);
+        }
+        //AES_256_CTR_HMAC = 5;
+        if (message.startsWith("5:")) {
+            key = new byte[32];
+            System.arraycopy(array, 3, key, 0, key.length);
+        }         
+        Crypto.setKey(key);
     }
 
 }
