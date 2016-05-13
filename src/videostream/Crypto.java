@@ -46,9 +46,6 @@ public class Crypto {
     //symetric encryption key
     private static byte[] key;
 
-    //debug option
-    private final boolean debug = false;
-
     //networking - own ip address and prefered port
     public final String SERVER_IP = "130.161.177.117";
     public final int COMMUNICATION_PORT = 5000;
@@ -162,7 +159,7 @@ public class Crypto {
         hmac.doFinal(resBuf, 0);
 
         //debug prints to manually verify MAC's
-        if (debug) {
+        if (Videostream.debug) {
             System.out.println("computed mac: " + printHexBinary(resBuf));
             System.out.println("given mac: " + printHexBinary(mac));
         }
@@ -569,7 +566,8 @@ public class Crypto {
     //-------------asymmetric encryption part------------------------//
     public void exchangeKeyServer() {
         ServerRunnable serverRunnable = new ServerRunnable(SERVER_IP, COMMUNICATION_PORT);
-        serverRunnable.setResponse(prependMac(("4:".getBytes()), createKey()));
+        Crypto.key = createKey();
+        serverRunnable.setResponse(prependMac(("0:".getBytes()), Crypto.key));
         Thread server = new Thread(serverRunnable);
         server.start();
     }

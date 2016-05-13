@@ -5,8 +5,14 @@ import java.util.concurrent.TimeUnit;
 import org.opencv.core.*;
 import org.opencv.videoio.*;
 import static java.lang.Thread.sleep;
+import static javax.xml.bind.DatatypeConverter.printHexBinary;
+
+
 
 public class Videostream {
+    
+    //debug option
+    public static final boolean debug = false;
 
     static {
         // Load the native OpenCV library
@@ -17,7 +23,9 @@ public class Videostream {
         Videostream stream = new Videostream();
         //stream.testCrypto();
         Crypto crypt = new Crypto();
+        crypt.setCipher(Crypto.AES_128_GCM);
         crypt.exchangeKeyServer();
+        System.out.println("Symmetric crypto key: "+printHexBinary(crypt.getKey()));
         
         /*Asymmetric asym = new Asymmetric();
         try {

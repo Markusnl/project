@@ -76,7 +76,7 @@ public class NioSslClient extends NioSslPeer {
         SSLSession session = engine.getSession();
         myAppData = ByteBuffer.allocate(1024);
         myNetData = ByteBuffer.allocate(session.getPacketBufferSize());
-        peerAppData = ByteBuffer.allocate(1024);
+        peerAppData = ByteBuffer.allocate(1024);    
         peerNetData = ByteBuffer.allocate(session.getPacketBufferSize());
     }
 
@@ -124,7 +124,9 @@ public class NioSslClient extends NioSslPeer {
     @Override
     protected void write(SocketChannel socketChannel, SSLEngine engine, byte[] message) throws IOException {
 
-        System.out.println("About to write to the server...");
+        if (Videostream.debug) {
+            System.out.println("About to write to the server...");
+        }
 
         myAppData.clear();
         myAppData.put(message);
@@ -140,7 +142,9 @@ public class NioSslClient extends NioSslPeer {
                     while (myNetData.hasRemaining()) {
                         socketChannel.write(myNetData);
                     }
-                    System.out.println("Message sent to the server: " + printHexBinary(message));
+                    if (Videostream.debug) {
+                        System.out.println("Message sent to the server: " + printHexBinary(message));
+                    }
                     break;
                 case BUFFER_OVERFLOW:
                     myNetData = enlargePacketBuffer(engine, myNetData);
@@ -184,7 +188,9 @@ public class NioSslClient extends NioSslPeer {
     @Override
     protected void read(SocketChannel socketChannel, SSLEngine engine) throws Exception {
 
-        System.out.println("About to read from the server...");
+        if (Videostream.debug) {
+            System.out.println("About to read from the server...");
+        }
 
         peerNetData.clear();
         int waitToReadMillis = 50;
@@ -199,7 +205,9 @@ public class NioSslClient extends NioSslPeer {
                     switch (result.getStatus()) {
                         case OK:
                             peerAppData.flip();
-                            System.out.println("Server response: " + new String(peerAppData.array()));
+                            if (Videostream.debug) {
+                                System.out.println("Server response: " + new String(peerAppData.array()));
+                            }
                             parseMessage(peerAppData.array());
                             exitReadLoop = true;
                             break;
@@ -231,10 +239,14 @@ public class NioSslClient extends NioSslPeer {
      * @throws IOException if an I/O error occurs to the socket channel.
      */
     public void shutdown() throws IOException {
-        System.out.println("About to close connection with the server...");
+        if (Videostream.debug) {
+            System.out.println("About to close connection with the server...");
+        }
         closeConnection(socketChannel, engine);
         executor.shutdown();
-        System.out.println("Goodbye!");
+        if (Videostream.debug) {
+            System.out.println("Goodbye!");
+        }
     }
 
     private void parseMessage(byte[] array) {
@@ -274,7 +286,7 @@ public class NioSslClient extends NioSslPeer {
         if (message.startsWith("5:")) {
             key = new byte[32];
             System.arraycopy(array, 3, key, 0, key.length);
-        }         
+        }
         Crypto.setKey(key);
     }
 
