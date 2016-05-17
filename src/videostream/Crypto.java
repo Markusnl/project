@@ -250,6 +250,8 @@ public class Crypto {
 
         // check if the two MACs match
         mac.doFinal(computedMac, 0);
+        System.out.println("1)  "+printHexBinary(receivedMac));
+        System.out.println("2)  "+printHexBinary(computedMac));
         if (Arrays.equals(receivedMac, computedMac)) {
             return out;
         } else {
@@ -452,7 +454,6 @@ public class Crypto {
 
     public byte[] encryptMessage(byte[] data) {
         byte[] nonce = createNonce();
-        key = createKey();
         switch (MESSAGE_FORMAT) {
             case 0:
                 return encryptWithAESGCM(key, nonce, data);

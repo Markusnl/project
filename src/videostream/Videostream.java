@@ -7,14 +7,14 @@ import org.opencv.videoio.*;
 import static java.lang.Thread.sleep;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import static javax.xml.bind.DatatypeConverter.printHexBinary;
 
 public class Videostream {
 
     //debug option
     public static final boolean debug = false;
-
-    //crypto class
     private Crypto crypt = new Crypto();
 
     static {
@@ -24,8 +24,8 @@ public class Videostream {
 
     public static void main(String[] args) {
         Videostream stream = new Videostream();
-        stream.streamClient();
-        //stream.receiveClient();
+        //stream.streamClient();
+        stream.receiveClient();
 
         /*onvifControl onvifcamera = new onvifControl();
             try {
@@ -50,6 +50,42 @@ public class Videostream {
         //stream.displayVideo("http://d3macfshcnzosd.cloudfront.net/047802938_main_xxl.mp4");
         //stream.displayVideo("http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4");
         //stream.displayVideo("http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush");
+    }
+
+    public void streamClient() {
+        crypt.setCipher(Crypto.CHACHA20_POLY);
+        String[] allowed = {"130.161.177.182", "3600", "130.161.177.92", "3600","130.161.177.117","3600"};
+        crypt.exchangeKeyServer(allowed);
+        System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
+
+        int smallestTime = Integer.MAX_VALUE;
+        for (int i = 1; i < allowed.length; i += 2) {
+            if (smallestTime > Integer.valueOf(allowed[i])) {
+                smallestTime = Integer.valueOf(allowed[i]);
+            }
+        }
+        Timer timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                crypt.reKey();
+                System.out.println("require rekey, new symmetric crypto key: " + printHexBinary(crypt.getKey()));
+            }
+        }, smallestTime * 1000, smallestTime * 1000);
+
+        displayVideo("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
+
+    }
+
+    public void receiveClient() {
+        try {
+            crypt.exchangeKeyClient("130.161.177.117");
+            System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
+        } catch (Exception ex) {
+            Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        Receiver receiver = new Receiver();
+        receiver.receiveImages("224.1.1.1", 4446);
     }
 
     public void displayVideo(String location) {
@@ -91,42 +127,12 @@ public class Videostream {
 
     }
 
-    public void streamClient() {
-        crypt.setCipher(Crypto.CHACHA20_POLY);
-        String[] allowed = {"130.161.177.182", "3600", "130.161.177.92", "3600"};
-        crypt.exchangeKeyServer(allowed);
-        System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
-
-        int smallestTime = Integer.MAX_VALUE;
-        for (int i = 1; i < allowed.length; i += 2) {
-            if (smallestTime > Integer.valueOf(allowed[i])) {
-                smallestTime = Integer.valueOf(allowed[i]);
-            }
-        }
-        Timer timer = new Timer();
-        timer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                crypt.reKey();
-                System.out.println("require rekey, new symmetric crypto key: " + printHexBinary(crypt.getKey()));
-            }
-        }, smallestTime * 1000, smallestTime * 1000);
-
-        //displayVideo("C:\\Libs\\opencv\\sources\\samples\\cpp\\tutorial_code\\HighGUI\\video-input-psnr-ssim\\video\\Megamind.avi");
-
-    }
-
-    public void receiveClient() {
-        Receiver receiver = new Receiver();
-        receiver.receiveImages("224.1.1.1", 4446);
-    }
-
     public void testCrypto() {
         Crypto crypt = new Crypto();
         Random r = new Random();
         byte key[];
         //byte key[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".getBytes();
-        double samples = 10000;
+        double samples = 100;
         double avglength = 0;
         long runTime0 = 0;
         long runTime1 = 0;
