@@ -5,14 +5,17 @@ import java.util.concurrent.TimeUnit;
 import org.opencv.core.*;
 import org.opencv.videoio.*;
 import static java.lang.Thread.sleep;
+import java.util.Timer;
+import java.util.TimerTask;
 import static javax.xml.bind.DatatypeConverter.printHexBinary;
 
-
-
 public class Videostream {
-    
+
     //debug option
     public static final boolean debug = false;
+
+    //crypto class
+    private Crypto crypt = new Crypto();
 
     static {
         // Load the native OpenCV library
@@ -21,26 +24,10 @@ public class Videostream {
 
     public static void main(String[] args) {
         Videostream stream = new Videostream();
-        //stream.testCrypto();
-        Crypto crypt = new Crypto();
-        crypt.setCipher(Crypto.AES_128_GCM);
-        crypt.exchangeKeyServer();
-        System.out.println("Symmetric crypto key: "+printHexBinary(crypt.getKey()));
-        
-        /*Asymmetric asym = new Asymmetric();
-        try {
-            System.out.println("DH");
-            asym.DH();
-            System.out.println("DHE");
-            asym.DHE();
-            System.out.println("ECDH");
-            asym.ECDH();
-            System.out.println("ECDHE");
-            asym.ECDHE();
-        } catch (Exception ex) {
-            Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);
-        }    */
-            /*onvifControl onvifcamera = new onvifControl();
+        stream.streamClient();
+        //stream.receiveClient();
+
+        /*onvifControl onvifcamera = new onvifControl();
             try {
             System.out.println("Attempting autoconnect on IP:PORT");
             onvifcamera.getSystemDateAndTime("68.228.0.35:8082");
@@ -49,21 +36,20 @@ public class Videostream {
             } catch (IOException ex) {
             Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);
             }*/
-            //stream.displayVideo("C:\\Libs\\opencv\\sources\\samples\\cpp\\tutorial_code\\HighGUI\\video-input-psnr-ssim\\video\\Megamind.avi");
-            //stream.displayVideo("admin:admin@http://85.173.183.13/image1");
-            //stream.displayVideo("http://d3macfshcnzosd.cloudfront.net/047802938_main_xxl.mp4");
-            //stream.displayVideo("http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4");
-            //stream.displayVideo("http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush");
-            /* TEST URLS
+        //stream.displayVideo("C:\\Libs\\opencv\\sources\\samples\\cpp\\tutorial_code\\HighGUI\\video-input-psnr-ssim\\video\\Megamind.avi");
+        //stream.displayVideo("admin:admin@http://85.173.183.13/image1");
+        //stream.displayVideo("http://d3macfshcnzosd.cloudfront.net/047802938_main_xxl.mp4");
+        //stream.displayVideo("http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4");
+        //stream.displayVideo("http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush");
+        /* TEST URLS
             "rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov"
             "http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush"
             http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4
-            */
-            //stream.displayVideo("http://85.173.183.13/image1");
-            //stream.displayVideo("http://d3macfshcnzosd.cloudfront.net/047802938_main_xxl.mp4");
-            //stream.displayVideo("http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4");
-            //stream.displayVideo("http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush");
-        
+         */
+        //stream.displayVideo("http://85.173.183.13/image1");
+        //stream.displayVideo("http://d3macfshcnzosd.cloudfront.net/047802938_main_xxl.mp4");
+        //stream.displayVideo("http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4");
+        //stream.displayVideo("http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush");
     }
 
     public void displayVideo(String location) {
@@ -85,6 +71,7 @@ public class Videostream {
         MyFrame frame = new MyFrame("captured stream");
         frame.setVisible(true);
 
+        //get smallest time frame for rekey
         while (cap.read(image)) {
             //server renders to send image as well
             server.setImage(image);
@@ -102,6 +89,36 @@ public class Videostream {
             }
         }
 
+    }
+
+    public void streamClient() {
+        crypt.setCipher(Crypto.CHACHA20_POLY);
+        String[] allowed = {"130.161.177.182", "3600", "130.161.177.92", "3600"};
+        crypt.exchangeKeyServer(allowed);
+        System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
+
+        int smallestTime = Integer.MAX_VALUE;
+        for (int i = 1; i < allowed.length; i += 2) {
+            if (smallestTime > Integer.valueOf(allowed[i])) {
+                smallestTime = Integer.valueOf(allowed[i]);
+            }
+        }
+        Timer timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                crypt.reKey();
+                System.out.println("require rekey, new symmetric crypto key: " + printHexBinary(crypt.getKey()));
+            }
+        }, smallestTime * 1000, smallestTime * 1000);
+
+        //displayVideo("C:\\Libs\\opencv\\sources\\samples\\cpp\\tutorial_code\\HighGUI\\video-input-psnr-ssim\\video\\Megamind.avi");
+
+    }
+
+    public void receiveClient() {
+        Receiver receiver = new Receiver();
+        receiver.receiveImages("224.1.1.1", 4446);
     }
 
     public void testCrypto() {
@@ -131,7 +148,7 @@ public class Videostream {
             runTime0 += System.nanoTime() - startTime0;
 
             //start AES GCM performance test
-            crypt.setCipher(Crypto.AES_256_GCM);   
+            crypt.setCipher(Crypto.AES_256_GCM);
             long startTime1 = System.nanoTime();
             byte[] ciphertxt1 = crypt.encryptMessage(data);
             key = crypt.getKey();

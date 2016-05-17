@@ -31,5 +31,9 @@ public class ServerRunnable implements Runnable {
     public void setResponse(byte[] response) {
         server.setResponse(response);
     }
+    
+    public void setAllowedPartyTime(String[] allowed) {
+        server.setAllowedPartyTime(allowed);
+    }
 
 }

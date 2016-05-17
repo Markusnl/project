@@ -45,10 +45,13 @@ public class Crypto {
 
     //symetric encryption key
     private static byte[] key;
+    
+    //server thread
+    private ServerRunnable serverRunnable;
 
     //networking - own ip address and prefered port
     public final String SERVER_IP = "130.161.177.117";
-    public final int COMMUNICATION_PORT = 5000;
+    public final int COMMUNICATION_PORT = 443;
 
     /**
      * Returns the Message Authentication Code from the input. By default it
@@ -318,17 +321,6 @@ public class Crypto {
     }
 
     /**
-     * Method that start the reKeying process between sending en receiving
-     * clients
-     *
-     * @return The new synchronous key between clients
-     */
-    public byte[] reKey() {
-        //additional reKeying operations
-        return createKey();
-    }
-
-    /**
      * Method for creating a NONCE_SIZE-bit secure random Nonce
      *
      * @return A 64-bit nonce
@@ -564,10 +556,11 @@ public class Crypto {
     
 
     //-------------asymmetric encryption part------------------------//
-    public void exchangeKeyServer() {
-        ServerRunnable serverRunnable = new ServerRunnable(SERVER_IP, COMMUNICATION_PORT);
+    public void exchangeKeyServer(String[] allowed) {
+        serverRunnable = new ServerRunnable(SERVER_IP, COMMUNICATION_PORT);
         Crypto.key = createKey();
-        serverRunnable.setResponse(prependMac(("0:".getBytes()), Crypto.key));
+        serverRunnable.setResponse(prependMac(("4:".getBytes()), Crypto.key));
+        serverRunnable.setAllowedPartyTime(allowed);
         Thread server = new Thread(serverRunnable);
         server.start();
     }
@@ -578,6 +571,17 @@ public class Crypto {
         client.write("0:1:2:3:4:5".getBytes());
         client.read();
         client.shutdown();
+    }
+    
+     /**
+     * Method that start the reKeying process between sending en receiving
+     * clients
+     *
+     * @return The new synchronous key between clients
+     */
+    public void reKey() {
+       Crypto.key = createKey();
+       serverRunnable.setResponse(prependMac(("4:".getBytes()), Crypto.key));
     }
 
 }

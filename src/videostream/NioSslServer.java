@@ -10,6 +10,9 @@ import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.SelectorProvider;
 import java.security.SecureRandom;
 import java.util.Iterator;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
@@ -59,6 +62,11 @@ public class NioSslServer extends NioSslPeer {
     private Selector selector;
     private byte[] response;
 
+    //timed auth
+    private String[] allowed;
+    private long runTime = 0;
+    private long startTime = 0;
+
     /**
      * Server is designed to apply an SSL/TLS protocol and listen to an IP
      * address and port.
@@ -70,8 +78,8 @@ public class NioSslServer extends NioSslPeer {
      * @throws Exception
      */
     public NioSslServer(String protocol, String hostAddress, int port) throws Exception {
-
-        context = SSLContext.getInstance(protocol);//storepass/keypass//
+        startTime = System.nanoTime();
+        context = SSLContext.getInstance(protocol);
         context.init(createKeyManagers("certs/EC256/Server/Serverkey.jks", "thales", "thales"), createTrustManagers("certs/EC256/trusted.jks", "thales"), new SecureRandom());
 
         SSLSession dummySession = context.createSSLEngine().getSession();
@@ -88,6 +96,19 @@ public class NioSslServer extends NioSslPeer {
         serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 
         active = true;
+        Timer timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                //update time for all parties
+                for (int i = 1; i < allowed.length; i += 2) {
+                    System.out.print("Accestime for: " + allowed[i - 1] + " changed: " + allowed[i]);
+                    allowed[i] = Integer.toString(Integer.valueOf(allowed[i]) - 30);
+                    System.out.println(" to: " + allowed[i]);
+                }
+            }
+            //every 30 sec deduct time from allowed list
+        }, 30 * 1000, 30 * 1000);
 
     }
 
@@ -105,7 +126,6 @@ public class NioSslServer extends NioSslPeer {
         if (Videostream.debug) {
             System.out.println("Initialized and waiting for new connections...");
         }
-
         while (isActive()) {
             selector.select();
             Iterator<SelectionKey> selectedKeys = selector.selectedKeys().iterator();
@@ -154,30 +174,45 @@ public class NioSslServer extends NioSslPeer {
      * @throws Exception
      */
     private void accept(SelectionKey key) throws Exception {
-
+        boolean mayWatch = false;
         if (Videostream.debug) {
             System.out.println("New connection request!");
         }
 
         SocketChannel socketChannel = ((ServerSocketChannel) key.channel()).accept();
-        socketChannel.configureBlocking(false);
 
-        SSLEngine engine = context.createSSLEngine();
-        engine.setUseClientMode(false);
-        engine.beginHandshake();
-        
-        /*String[] strings = engine.getSupportedCipherSuites();
-        for(int i=0;i<strings.length;i++){System.out.println(strings[i]);}
-        System.out.println("dsdfhsdfffffff");*/
+        //who is connecting
+        String[] ips = socketChannel.getRemoteAddress().toString().split("\\:");
+        System.out.println(ips[0].substring(1) + " wants to connect on port: " + ips[1]);
 
-        if (doHandshake(socketChannel, engine)) {
-            socketChannel.register(selector, SelectionKey.OP_READ, engine);
-        } else {
-            socketChannel.close();
-            if (Videostream.debug) {
-                System.out.println("Connection closed due to handshake failure.");
+        //is he on the allowed list?
+        for (int i = 0; i < allowed.length; i++) {
+            if (allowed[i].equals(ips[0].substring(1)) && Integer.valueOf(allowed[i + 1]) > 0) {
+                System.out.println("Target found on allowed list");
+                mayWatch = true;
+
+                socketChannel.configureBlocking(false);
+
+                SSLEngine engine = context.createSSLEngine();
+                engine.setUseClientMode(false);
+                engine.setNeedClientAuth(true);
+                engine.beginHandshake();
+
+                if (doHandshake(socketChannel, engine)) {
+                    socketChannel.register(selector, SelectionKey.OP_READ, engine);
+                } else {
+                    socketChannel.close();
+                    if (Videostream.debug) {
+                        System.out.println("Connection closed due to handshake failure.");
+                    }
+                }
             }
         }
+        if (!mayWatch) {
+            System.out.println("target not allowed to watch stream!");
+            socketChannel.close();
+        }
+
     }
 
     /**
@@ -194,7 +229,7 @@ public class NioSslServer extends NioSslPeer {
     @Override
     protected void read(SocketChannel socketChannel, SSLEngine engine) throws IOException {
         //System.out.println(engine.getSession().getCipherSuite());
-        
+
         if (Videostream.debug) {
             System.out.println("About to read from a client...");
         }
@@ -264,6 +299,7 @@ public class NioSslServer extends NioSslPeer {
         myAppData.clear();
         myAppData.put(message);
         myAppData.flip();
+
         while (myAppData.hasRemaining()) {
             // The loop has a meaning for (outgoing) messages larger than 16KB.
             // Every wrap call will remove 16KB from the original message and send it to the remote peer.
@@ -304,5 +340,10 @@ public class NioSslServer extends NioSslPeer {
 
     public void setResponse(byte[] response) {
         this.response = response;
+    }
+
+    public void setAllowedPartyTime(String[] allowed) {
+        //party1 - time1 - party2 - time2
+        this.allowed = allowed;
     }
 }
