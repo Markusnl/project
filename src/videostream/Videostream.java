@@ -1,5 +1,6 @@
 package videostream;
 
+import java.io.IOException;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import org.opencv.core.*;
@@ -54,16 +55,19 @@ public class Videostream {
 
     public void streamClient() {
         crypt.setCipher(Crypto.CHACHA20_POLY);
-        String[] allowed = {"130.161.177.182", "3600", "130.161.177.92", "3600","130.161.177.117","3600"};
+        String[] allowed = {"130.161.177.182", "20", "130.161.177.92", "3600","130.161.177.117","40"};
         crypt.exchangeKeyServer(allowed);
         System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
-
+        //get smallest required rekey time
         int smallestTime = Integer.MAX_VALUE;
         for (int i = 1; i < allowed.length; i += 2) {
             if (smallestTime > Integer.valueOf(allowed[i])) {
                 smallestTime = Integer.valueOf(allowed[i]);
             }
         }
+        //do not allow more time than 30 minutes though
+        smallestTime = smallestTime>1800 ? 1800 : smallestTime;
+        System.out.println("Rekeying interval set at "+Math.round(smallestTime/60)+" minutes "+ smallestTime%60+" seconds");
         Timer timer = new Timer();
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override
@@ -78,12 +82,14 @@ public class Videostream {
     }
 
     public void receiveClient() {
+        //initial key exchange to start
         try {
             crypt.exchangeKeyClient("130.161.177.117");
             System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
-        } catch (Exception ex) {
-            Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);
         }
+        catch (Exception ex) {
+            Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);
+        } 
         Receiver receiver = new Receiver();
         receiver.receiveImages("224.1.1.1", 4446);
     }
@@ -142,55 +148,59 @@ public class Videostream {
         long runTime5 = 0;
 
         for (int i = 0; i < samples; i++) {
-            //generate random data of random size to test
-            byte[] data = crypt.createRandom(10000);//r.nextInt(MulticastServer.DATAGRAM_MAX_SIZE));
-            avglength += data.length;
-            //start AES GCM performance test
-            crypt.setCipher(Crypto.AES_128_GCM);
-            long startTime0 = System.nanoTime();
-            byte[] ciphertxt0 = crypt.encryptMessage(data);
-            key = crypt.getKey();
-            crypt.decryptMessage(key, ciphertxt0);
-            runTime0 += System.nanoTime() - startTime0;
-
-            //start AES GCM performance test
-            crypt.setCipher(Crypto.AES_256_GCM);
-            long startTime1 = System.nanoTime();
-            byte[] ciphertxt1 = crypt.encryptMessage(data);
-            key = crypt.getKey();
-            crypt.decryptMessage(key, ciphertxt1);
-            runTime1 += System.nanoTime() - startTime1;
-
-            //start Chacha20/20 performance test
-            crypt.setCipher(Crypto.CHACHA20_HMAC);
-            long startTime2 = System.nanoTime();
-            byte[] ciphertxt2 = crypt.encryptMessage(data);
-            key = crypt.getKey();
-            crypt.decryptMessage(key, ciphertxt2);
-            runTime2 += System.nanoTime() - startTime2;
-
-            //start ChaCha20/12 performance test
-            crypt.setCipher(Crypto.CHACHA12_HMAC);
-            long startTime3 = System.nanoTime();
-            byte[] ciphertxt3 = crypt.encryptMessage(data);
-            key = crypt.getKey();
-            crypt.decryptMessage(key, ciphertxt3);
-            runTime3 += System.nanoTime() - startTime3;
-
-            //start ChaCha20/12 performance test
-            crypt.setCipher(Crypto.CHACHA20_POLY);
-            long startTime4 = System.nanoTime();
-            byte[] ciphertxt4 = crypt.encryptMessage(data);
-            key = crypt.getKey();
-            crypt.decryptMessage(key, ciphertxt4);
-            runTime4 += System.nanoTime() - startTime4;
-
-            crypt.setCipher(Crypto.AES_256_CTR_HMAC);
-            long startTime5 = System.nanoTime();
-            byte[] ciphertxt5 = crypt.encryptMessage(data);
-            key = crypt.getKey();
-            crypt.decryptMessage(key, ciphertxt5);
-            runTime5 += System.nanoTime() - startTime5;
+            try {
+                //generate random data of random size to test
+                byte[] data = crypt.createRandom(10000);//r.nextInt(MulticastServer.DATAGRAM_MAX_SIZE));
+                avglength += data.length;
+                //start AES GCM performance test
+                crypt.setCipher(Crypto.AES_128_GCM);
+                long startTime0 = System.nanoTime();
+                byte[] ciphertxt0 = crypt.encryptMessage(data);
+                key = crypt.getKey();
+                crypt.decryptMessage(key, ciphertxt0);
+                runTime0 += System.nanoTime() - startTime0;
+                
+                //start AES GCM performance test
+                crypt.setCipher(Crypto.AES_256_GCM);
+                long startTime1 = System.nanoTime();
+                byte[] ciphertxt1 = crypt.encryptMessage(data);
+                key = crypt.getKey();
+                crypt.decryptMessage(key, ciphertxt1);
+                runTime1 += System.nanoTime() - startTime1;
+                
+                //start Chacha20/20 performance test
+                crypt.setCipher(Crypto.CHACHA20_HMAC);
+                long startTime2 = System.nanoTime();
+                byte[] ciphertxt2 = crypt.encryptMessage(data);
+                key = crypt.getKey();
+                crypt.decryptMessage(key, ciphertxt2);
+                runTime2 += System.nanoTime() - startTime2;
+                
+                //start ChaCha20/12 performance test
+                crypt.setCipher(Crypto.CHACHA12_HMAC);
+                long startTime3 = System.nanoTime();
+                byte[] ciphertxt3 = crypt.encryptMessage(data);
+                key = crypt.getKey();
+                crypt.decryptMessage(key, ciphertxt3);
+                runTime3 += System.nanoTime() - startTime3;
+                
+                //start ChaCha20/12 performance test
+                crypt.setCipher(Crypto.CHACHA20_POLY);
+                long startTime4 = System.nanoTime();
+                byte[] ciphertxt4 = crypt.encryptMessage(data);
+                key = crypt.getKey();
+                crypt.decryptMessage(key, ciphertxt4);
+                runTime4 += System.nanoTime() - startTime4;
+                
+                crypt.setCipher(Crypto.AES_256_CTR_HMAC);
+                long startTime5 = System.nanoTime();
+                byte[] ciphertxt5 = crypt.encryptMessage(data);
+                key = crypt.getKey();
+                crypt.decryptMessage(key, ciphertxt5);
+                runTime5 += System.nanoTime() - startTime5;
+            } catch (IOException ex) {
+                Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);
+            }
 
         }
         System.out.println("avg message length: " + avglength / samples);

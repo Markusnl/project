@@ -34,6 +34,8 @@ public class Crypto {
     public final static int CHACHA12_HMAC = 3;
     public final static int CHACHA20_POLY = 4;
     public final static int AES_256_CTR_HMAC = 5;
+    
+   
 
     //default AES_256_GCM
     private int NONCE_SIZE = 12;
@@ -221,7 +223,7 @@ public class Crypto {
         return prependMac(generateHMac(key, out), out);
     }
 
-    private byte[] decryptWithChaChaPoly(byte[] key, byte[] input) {
+    private byte[] decryptWithChaChaPoly(byte[] key, byte[] input) throws IOException {
         ChaChaEngine engine = new ChaChaEngine();
         Poly1305 mac = new Poly1305();
         engine.init(true, new ParametersWithIV(new KeyParameter(key), getNonce(input)));
@@ -250,12 +252,10 @@ public class Crypto {
 
         // check if the two MACs match
         mac.doFinal(computedMac, 0);
-        System.out.println("1)  "+printHexBinary(receivedMac));
-        System.out.println("2)  "+printHexBinary(computedMac));
         if (Arrays.equals(receivedMac, computedMac)) {
             return out;
         } else {
-            return null;
+            throw new IOException();
         }
     }
 
@@ -481,7 +481,7 @@ public class Crypto {
         return null;
     }
 
-    public byte[] decryptMessage(byte[] key, byte[] data) {
+    public byte[] decryptMessage(byte[] key, byte[] data) throws IOException {
         switch (MESSAGE_FORMAT) {
             //AES_126_GCM
             case 0:
@@ -497,7 +497,7 @@ public class Crypto {
                     return encryptWithChaChaHmac(key, getNonce(data), getData(data));
                 } else {
                     System.out.println("Mac verification failed");
-                    return null;
+                    throw new IOException();
                 }
 
             //CHACHA20/20_HMAC
@@ -506,7 +506,7 @@ public class Crypto {
                     return encryptWithChaChaHmac(key, getNonce(data), getData(data));
                 } else {
                     System.out.println("Mac verification failed");
-                    return null;
+                    throw new IOException();
                 }
 
             case 4:
@@ -517,7 +517,7 @@ public class Crypto {
                     return decryptWithAESCTR(key, getNonce(data), getData(data));
                 } else {
                     System.out.println("Mac verification failed");
-                    return null;
+                    throw new IOException();
                 }
 
             default:
@@ -525,7 +525,7 @@ public class Crypto {
                 System.exit(1);
 
         }
-        return null;
+        throw new IOException();
     }
 
     private byte[] encryptWithAESCTR(byte[] key, byte[] nonce, byte[] data) {
@@ -559,7 +559,7 @@ public class Crypto {
     //-------------asymmetric encryption part------------------------//
     public void exchangeKeyServer(String[] allowed) {
         serverRunnable = new ServerRunnable(SERVER_IP, COMMUNICATION_PORT);
-        Crypto.key = createKey();
+        reKey();
         serverRunnable.setResponse(prependMac(("4:".getBytes()), Crypto.key));
         serverRunnable.setAllowedPartyTime(allowed);
         Thread server = new Thread(serverRunnable);

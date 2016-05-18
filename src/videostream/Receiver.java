@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
@@ -15,12 +17,6 @@ import javax.swing.JLabel;
 import javax.swing.JWindow;
 import static javax.xml.bind.DatatypeConverter.printHexBinary;
 
-/**
- * Multicast Image Receiver Version: 0.1
- *
- * @author Jochen Luell
- *
- */
 public class Receiver implements Runnable {
 
     /* Flags and sizes */
@@ -30,7 +26,8 @@ public class Receiver implements Runnable {
 
     public static int SESSION_END = 64;
     public boolean debug = false;
-
+    private int maxTries = 3;
+    private int tries = 0;
     /*
      * The absolute maximum datagram packet size is 65507, The maximum IP packet
      * size of 65535 minus 20 bytes for the IP header and 8 bytes for the UDP
@@ -62,55 +59,6 @@ public class Receiver implements Runnable {
         this.port = port;
         new Thread(this).start();
     }
-    /*crypt.setCipher(Crypto.CHACHA20_POLY);
-     InetAddress ia = null;
-     MulticastSocket ms = null;
-
-     //Constuct frame
-     JLabel labelImage = new JLabel();
-     JLabel windowImage = new JLabel();
-
-     frame = new JFrame("Multicast Image Receiver");
-     frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-     frame.getContentPane().add(labelImage);
-     frame.setSize(300, 10);
-     frame.setVisible(true);
-
-     //Construct full screen window
-     fullscreenWindow = new JWindow();
-     fullscreenWindow.getContentPane().add(windowImage);
-
-     try {
-     // Get address
-     ia = InetAddress.getByName(multicastAddress);
-
-     // Setup socket and join group
-     ms = new MulticastSocket(port);
-     ms.joinGroup(ia);
-
-     int currentSession = -1;
-     int slicesStored = 0;
-     int[] slicesCol = null;
-     byte[] imageData = null;
-     boolean sessionAvailable = false;
-
-     // Setup byte array to store data received
-     byte[] buffer = new byte[DATAGRAM_MAX_SIZE];
-     // Receiving loop
-
-     } catch (IOException e) {
-     e.printStackTrace();
-     } finally {
-     if (ms != null) {
-     try {
-     //Leave group and close socket
-     ms.leaveGroup(ia);
-     ms.close();
-     } catch (IOException e) {
-     }
-     }
-     }
-     }*/
 
     @Override
     public void run() {
@@ -156,7 +104,24 @@ public class Receiver implements Runnable {
                 ms.receive(dp);
                 byte[] data = new byte[dp.getLength()];
                 System.arraycopy(dp.getData(), 0, data, 0, dp.getLength());
-                byte[] data1 = crypt.decryptMessage(crypt.getKey(), data);
+                byte[] data1 = null;
+
+                //decrypt and exchange keys
+                try {
+                    data1 = crypt.decryptMessage(crypt.getKey(), data);
+                } catch (IOException e) {
+                    try {
+                        crypt.exchangeKeyClient("130.161.177.117");
+                        System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
+                    } catch (Exception ex) {
+                        System.out.println("Attempting reconnect " + tries + "/" + maxTries);
+                        if (++tries == maxTries) {
+                            Logger.getLogger(Receiver.class.getName()).log(Level.SEVERE, null, ex);
+                            System.out.println("System unable to continue stream");
+                            System.exit(1);
+                        }
+                    }
+                }
 
                 if (data1 != null) {
                     // Read header infomation
