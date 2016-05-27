@@ -8,54 +8,50 @@ import org.opencv.videoio.*;
 import static java.lang.Thread.sleep;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.Vector;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import static javax.xml.bind.DatatypeConverter.printHexBinary;
 
 public class Videostream {
 
-    //debug option
     public static final boolean debug = false;
     private Crypto crypt = new Crypto();
+    
+    //server address
+    public static final String IP_ADDRESS = "130.161.177.84";//"192.168.50.100";
+    public static final int PORT = 443;
+    
+    //camera login
+    public static final String username = "admin";
+    public static final String password = "12345";
 
+    // Load the native OpenCV library
     static {
-        // Load the native OpenCV library
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
     }
 
     public static void main(String[] args) {
         Videostream stream = new Videostream();
-        //stream.streamClient();
-        stream.receiveClient();
-
-        /*onvifControl onvifcamera = new onvifControl();
-            try {
-            System.out.println("Attempting autoconnect on IP:PORT");
-            onvifcamera.getSystemDateAndTime("68.228.0.35:8082");
-            onvifcamera.getSystemDeviceInformation("68.228.0.35:8082");
-            onvifcamera.getCapabilities("68.228.0.35:8082");
-            } catch (IOException ex) {
-            Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);
-            }*/
-        //stream.displayVideo("C:\\Libs\\opencv\\sources\\samples\\cpp\\tutorial_code\\HighGUI\\video-input-psnr-ssim\\video\\Megamind.avi");
-        //stream.displayVideo("admin:admin@http://85.173.183.13/image1");
-        //stream.displayVideo("http://d3macfshcnzosd.cloudfront.net/047802938_main_xxl.mp4");
-        //stream.displayVideo("http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4");
-        //stream.displayVideo("http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush");
-        /* TEST URLS
+        stream.streamClient("C:\\Libs\\opencv\\sources\\samples\\cpp\\tutorial_code\\HighGUI\\video-input-psnr-ssim\\video\\Megamind.avi");
+        //stream.receiveClient();
+        //TEST URLS
+        /*  
             "rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov"
             "http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush"
-            http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4
+            "http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4"
+            "http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush"
+            "C:\\Libs\\opencv\\sources\\samples\\cpp\\tutorial_code\\HighGUI\\video-input-psnr-ssim\\video\\Megamind.avi"
+            "68.228.0.35:8082"
+            "192.168.50.10"
          */
-        //stream.displayVideo("http://85.173.183.13/image1");
-        //stream.displayVideo("http://d3macfshcnzosd.cloudfront.net/047802938_main_xxl.mp4");
-        //stream.displayVideo("http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4");
-        //stream.displayVideo("http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush");
     }
 
-    public void streamClient() {
+    public void streamClient(String mediaUrl) {
+        String username = "admin";
+        String password = "12345";
         crypt.setCipher(Crypto.CHACHA20_POLY);
-        String[] allowed = {"130.161.177.182", "20", "130.161.177.92", "3600","130.161.177.117","40"};
+        String[] allowed = {IP_ADDRESS, "3600", "130.161.177.117", "30", "192.168.0.26", "3600", "145.24.243.80", "3600"};
         crypt.exchangeKeyServer(allowed);
         System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
         //get smallest required rekey time
@@ -66,8 +62,8 @@ public class Videostream {
             }
         }
         //do not allow more time than 30 minutes though
-        smallestTime = smallestTime>1800 ? 1800 : smallestTime;
-        System.out.println("Rekeying interval set at "+Math.round(smallestTime/60)+" minutes "+ smallestTime%60+" seconds");
+        smallestTime = smallestTime > 1800 ? 1800 : smallestTime;
+        System.out.println("Rekeying interval set at " + Math.round(smallestTime / 60) + " minutes " + smallestTime % 60 + " seconds");
         Timer timer = new Timer();
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override
@@ -77,19 +73,44 @@ public class Videostream {
             }
         }, smallestTime * 1000, smallestTime * 1000);
 
-        displayVideo("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
+        Vector<String> profiles = null;
+        if (validIP(mediaUrl)) {
+            OnvifControl onvifcamera = new OnvifControl();
+            try {
+                System.out.println("Attempting ONVIF autoconnect");
+                profiles = onvifcamera.getProfiles(mediaUrl);
+            } catch (IOException ex) {
+                System.out.println("autoconnect failed");
+            }
+        }
+        //No onvif profile was created
+        if (profiles == null || profiles.isEmpty()) {
+            displayVideo(mediaUrl);
+        } else {
+            mediaUrl="rtsp://"+username+":"+password+"@"+mediaUrl+"/ONVIF/MediaInput?profile="+profiles.elementAt(1);
+            System.out.println("Trying to connect to: "+mediaUrl);
+            displayVideo(mediaUrl);
+        }
 
     }
 
     public void receiveClient() {
-        //initial key exchange to start
+        Timer timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                System.out.println("good: "+ Crypto.good);
+                System.out.println("bad: "+ Crypto.bad);
+            }
+        }, 10 * 1000, 10 * 1000);
+        
+        
         try {
-            crypt.exchangeKeyClient("130.161.177.117");
+            crypt.exchangeKeyClient(IP_ADDRESS);
             System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
-        }
-        catch (Exception ex) {
+        } catch (Exception ex) {
             Logger.getLogger(Videostream.class.getName()).log(Level.SEVERE, null, ex);
-        } 
+        }
         Receiver receiver = new Receiver();
         receiver.receiveImages("224.1.1.1", 4446);
     }
@@ -133,12 +154,46 @@ public class Videostream {
 
     }
 
+    public static boolean validIP(String ip) {
+        try {
+            if (ip == null || ip.isEmpty()) {
+                return false;
+            }
+
+            String[] parts = ip.split("\\.");
+
+            //break port of last string section
+            if (parts[3].contains(":")) {
+                String[] port = parts[3].split("\\:");
+                parts[3] = port[0];
+                //check if port is valid
+                int i = Integer.parseInt(port[1]);
+                if (i < 0 || i > 65535) {
+                    return false;
+                }
+            }
+
+            if (parts.length != 4) {
+                return false;
+            }
+
+            for (String s : parts) {
+                int i = Integer.parseInt(s);
+                if ((i < 0) || (i > 255)) {
+                    return false;
+                }
+            }
+
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public void testCrypto() {
-        Crypto crypt = new Crypto();
         Random r = new Random();
         byte key[];
-        //byte key[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".getBytes();
-        double samples = 100;
+        double samples = 10000;
         double avglength = 0;
         long runTime0 = 0;
         long runTime1 = 0;
@@ -146,12 +201,21 @@ public class Videostream {
         long runTime3 = 0;
         long runTime4 = 0;
         long runTime5 = 0;
-
+        crypt.reKey();
         for (int i = 0; i < samples; i++) {
             try {
                 //generate random data of random size to test
                 byte[] data = crypt.createRandom(10000);//r.nextInt(MulticastServer.DATAGRAM_MAX_SIZE));
                 avglength += data.length;
+                
+                //start ChaCha20poly performance test
+                crypt.setCipher(Crypto.CHACHA20_POLY);
+                long startTime4 = System.nanoTime();
+                byte[] ciphertxt4 = crypt.encryptMessage(data);
+                key = crypt.getKey();
+                crypt.decryptMessage(key, ciphertxt4);
+                runTime4 += System.nanoTime() - startTime4;
+                       
                 //start AES GCM performance test
                 crypt.setCipher(Crypto.AES_128_GCM);
                 long startTime0 = System.nanoTime();
@@ -159,7 +223,7 @@ public class Videostream {
                 key = crypt.getKey();
                 crypt.decryptMessage(key, ciphertxt0);
                 runTime0 += System.nanoTime() - startTime0;
-                
+
                 //start AES GCM performance test
                 crypt.setCipher(Crypto.AES_256_GCM);
                 long startTime1 = System.nanoTime();
@@ -167,7 +231,7 @@ public class Videostream {
                 key = crypt.getKey();
                 crypt.decryptMessage(key, ciphertxt1);
                 runTime1 += System.nanoTime() - startTime1;
-                
+
                 //start Chacha20/20 performance test
                 crypt.setCipher(Crypto.CHACHA20_HMAC);
                 long startTime2 = System.nanoTime();
@@ -175,7 +239,7 @@ public class Videostream {
                 key = crypt.getKey();
                 crypt.decryptMessage(key, ciphertxt2);
                 runTime2 += System.nanoTime() - startTime2;
-                
+
                 //start ChaCha20/12 performance test
                 crypt.setCipher(Crypto.CHACHA12_HMAC);
                 long startTime3 = System.nanoTime();
@@ -183,15 +247,7 @@ public class Videostream {
                 key = crypt.getKey();
                 crypt.decryptMessage(key, ciphertxt3);
                 runTime3 += System.nanoTime() - startTime3;
-                
-                //start ChaCha20/12 performance test
-                crypt.setCipher(Crypto.CHACHA20_POLY);
-                long startTime4 = System.nanoTime();
-                byte[] ciphertxt4 = crypt.encryptMessage(data);
-                key = crypt.getKey();
-                crypt.decryptMessage(key, ciphertxt4);
-                runTime4 += System.nanoTime() - startTime4;
-                
+
                 crypt.setCipher(Crypto.AES_256_CTR_HMAC);
                 long startTime5 = System.nanoTime();
                 byte[] ciphertxt5 = crypt.encryptMessage(data);

@@ -21,6 +21,7 @@ import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.w3c.dom.NodeList;
 import java.util.Base64;
+import java.util.Vector;
 
 public class OnvifControl {
 
@@ -29,12 +30,10 @@ public class OnvifControl {
     }
 
     private String envelopeMessageStart() {
-        return "<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:tds=\"http://www.onvif.org/ver10/device/wsdl\" xmlns:tt=\"http://www.onvif.org/ver10/schema\">";
+        return "<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\"  xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\" xmlns:tds=\"http://www.onvif.org/ver10/device/wsdl\" xmlns:tt=\"http://www.onvif.org/ver10/schema\">";
     }
 
     private String wsUsernameToken() throws IOException {
-        String username = "admin";
-        String password = "pass";
         String encodednonce = "";
         String encodeddigest = "";
 
@@ -59,18 +58,16 @@ public class OnvifControl {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         outputStream.write(nonce);
         outputStream.write(time.getBytes());
-        outputStream.write(password.getBytes());
+        outputStream.write(Videostream.password.getBytes());
         byte out[] = outputStream.toByteArray();
 
         //create hash
         encodeddigest = Base64.getEncoder().encodeToString(md.digest(out));
-        //https://gist.github.com/lsowen/1a46f9d5fc026e6efc7d
-        //Digest = B64ENCODE( SHA1( B64DECODE( Nonce ) + Date + Password ) )
         String header = ""
                 + "<soap:Header>"
                 + "<wsse:Security xmlns:wsse=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd\" xmlns:wsu=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd\">"
                 + "<wsse:UsernameToken>"
-                + "<wsse:Username>" + username + "</wsse:Username>"
+                + "<wsse:Username>" + Videostream.username + "</wsse:Username>"
                 + "<wsse:Password Type=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest\">" + encodeddigest + "</wsse:Password>"
                 + "<wsse:Nonce EncodingType=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary\">" + encodednonce + "</wsse:Nonce>"
                 + "<wsu:Created>" + time + "</wsu:Created>"
@@ -91,10 +88,16 @@ public class OnvifControl {
                 + envelopeMessageEnd();
 
         try {
+            //return sendOnvif(message, ip);
             parseXML(sendOnvif(message, ip), "*");
-        } catch (ParserConfigurationException | SAXException | NullPointerException ex) {
+        } catch (NullPointerException ex) {
             System.out.println(" - Messaging failed");
+        } catch (ParserConfigurationException | SAXException ex) {
+            Logger.getLogger(OnvifControl.class.getName()).log(Level.SEVERE, null, ex);
         }
+        //return null;
+
+        //return null;
     }
 
     public void getSystemDeviceInformation(String ip) throws IOException {
@@ -125,6 +128,20 @@ public class OnvifControl {
         } catch (ParserConfigurationException | SAXException | NullPointerException ex) {
             System.out.println(" - Messaging failed");
         }
+    }
+
+    public Vector<String> getProfiles(String ip) throws IOException {
+        String message = envelopeMessageStart() + wsUsernameToken()
+                + "<soap:Body>"
+                + "<trt:GetProfiles/>"
+                + "</soap:Body>"
+                + envelopeMessageEnd();
+        try {
+            return parseProfiles(sendOnvif(message, ip), "trt:Profiles");
+        } catch (NullPointerException | ParserConfigurationException | SAXException ex) {
+            System.out.println(" - Messaging failed");
+        }
+        return null;
     }
 
     private String sendOnvif(String message, String ip) throws IOException {
@@ -178,12 +195,38 @@ public class OnvifControl {
             System.exit(1);
         }
         NodeList list = doc.getElementsByTagName(tagname);
-        //doc.getElementsByTagNameNS(message, message)
         for (int i = 0; i < list.getLength(); i++) {
             System.out.println(list.item(i).getNodeName() + " : " + list.item(i).getTextContent());
 
         }
+    }
 
+    private Vector<String> parseProfiles(String message, String tagname) throws ParserConfigurationException, IOException, SAXException {
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setNamespaceAware(true);
+        dbf.setIgnoringElementContentWhitespace(true);
+
+        Document doc = null;
+        try {
+            DocumentBuilder builder = dbf.newDocumentBuilder();
+            doc = builder.parse(new InputSource(new StringReader(message)));
+        } catch (ParserConfigurationException e) {
+            System.err.println(e);
+            System.exit(1);
+        }
+        NodeList list = doc.getElementsByTagName(tagname);
+        Vector<String> profiles = new Vector();
+        for (int i = 0; i < list.getLength(); i++) {
+            profiles.add(list.item(i).getAttributes().getNamedItem("token").getNodeValue());
+        }
+
+        if (Videostream.debug) {
+            System.out.println("Available profiles: ");
+            for (int i = 0; i < profiles.size(); i++) {
+                System.out.println(profiles.elementAt(i));
+            }
+        }
+        return profiles;
     }
 
     private String getCurrentTimeStamp() {

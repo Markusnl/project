@@ -27,7 +27,7 @@ public class Receiver implements Runnable {
     public static int SESSION_END = 64;
     public boolean debug = false;
     private int maxTries = 3;
-    private int tries = 0;
+    private int tries = 1;
     /*
      * The absolute maximum datagram packet size is 65507, The maximum IP packet
      * size of 65535 minus 20 bytes for the IP header and 8 bytes for the UDP
@@ -111,7 +111,7 @@ public class Receiver implements Runnable {
                     data1 = crypt.decryptMessage(crypt.getKey(), data);
                 } catch (IOException e) {
                     try {
-                        crypt.exchangeKeyClient("130.161.177.117");
+                        crypt.exchangeKeyClient(Videostream.IP_ADDRESS);
                         System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
                     } catch (Exception ex) {
                         System.out.println("Attempting reconnect " + tries + "/" + maxTries);

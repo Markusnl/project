@@ -81,7 +81,8 @@ public class NioSslServer extends NioSslPeer {
         startTime = System.nanoTime();
         context = SSLContext.getInstance(protocol);
         context.init(createKeyManagers("certs/EC256/Server/Serverkey.jks", "thales", "thales"), createTrustManagers("certs/EC256/trusted.jks", "thales"), new SecureRandom());
-
+        
+        
         SSLSession dummySession = context.createSSLEngine().getSession();
         myAppData = ByteBuffer.allocate(dummySession.getApplicationBufferSize());
         myNetData = ByteBuffer.allocate(dummySession.getPacketBufferSize());
@@ -194,6 +195,7 @@ public class NioSslServer extends NioSslPeer {
                 socketChannel.configureBlocking(false);
 
                 SSLEngine engine = context.createSSLEngine();
+                engine.setEnabledCipherSuites(new String[]{"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"});
                 engine.setUseClientMode(false);
                 engine.setNeedClientAuth(true);
                 engine.beginHandshake();

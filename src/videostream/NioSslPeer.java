@@ -45,10 +45,6 @@ import javax.net.ssl.TrustManagerFactory;
 public abstract class NioSslPeer {
 
     /**
-     * Class' logger.
-     */
-//	protected final Logger log = Logger.getLogger(getClass());
-    /**
      * Will contain this peer's application data in plaintext, that will be
      * later encrypted using {@link SSLEngine#wrap(ByteBuffer, ByteBuffer)} and
      * sent to the other peer. This buffer can typically be of any size, as long

@@ -1,11 +1,20 @@
 package videostream;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.nio.ByteBuffer;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.sql.Timestamp;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import static javax.xml.bind.DatatypeConverter.printHexBinary;
@@ -34,26 +43,22 @@ public class Crypto {
     public final static int CHACHA12_HMAC = 3;
     public final static int CHACHA20_POLY = 4;
     public final static int AES_256_CTR_HMAC = 5;
-    
-   
 
-    //default AES_256_GCM
+    //Crypto variables
     private int NONCE_SIZE = 12;
     private int HMAC_SIZE = 0;
     private int KEY_SIZE = 32;
-    private int CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+    private final int TIMESTAMP_SIZE = 8;
+    private int CRYPTO_HEADER_SIZE = HMAC_SIZE + NONCE_SIZE + TIMESTAMP_SIZE;
     private int MESSAGE_FORMAT = 1;
     private int CHACHA_ROUNDS = 20;
+    private final int allowedTimeVariance = 5;
 
     //symetric encryption key
     private static byte[] key;
-    
+
     //server thread
     private ServerRunnable serverRunnable;
-
-    //networking - own ip address and prefered port
-    public final String SERVER_IP = "130.161.177.117";
-    public final int COMMUNICATION_PORT = 443;
 
     /**
      * Returns the Message Authentication Code from the input. By default it
@@ -69,6 +74,12 @@ public class Crypto {
         return mac;
     }
 
+    public byte[] getTimeStamp(byte[] input) {
+        byte timestamp[] = new byte[TIMESTAMP_SIZE];
+        System.arraycopy(input, HMAC_SIZE, timestamp, 0, TIMESTAMP_SIZE);
+        return timestamp;
+    }
+
     /**
      * Returns the Nonce from the input. By default it returns the first 8 byte
      * as ChaCha20 describes.
@@ -78,7 +89,7 @@ public class Crypto {
      */
     public byte[] getNonce(byte[] input) {
         byte nonce[] = new byte[NONCE_SIZE];
-        System.arraycopy(input, HMAC_SIZE, nonce, 0, NONCE_SIZE);
+        System.arraycopy(input, HMAC_SIZE + TIMESTAMP_SIZE, nonce, 0, NONCE_SIZE);
         return nonce;
     }
 
@@ -219,14 +230,25 @@ public class Crypto {
         byte ciphertxt[] = new byte[input.length];
         engine.processBytes(input, 0, input.length, ciphertxt, 0);
 
-        byte out[] = prependNonce(nonce, ciphertxt);
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        try {
+            outputStream.write(createTimeStamp());
+            outputStream.write(nonce);
+            outputStream.write(ciphertxt);
+        } catch (IOException ex) {
+            Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+        byte[] out = outputStream.toByteArray();
         return prependMac(generateHMac(key, out), out);
     }
 
     private byte[] decryptWithChaChaPoly(byte[] key, byte[] input) throws IOException {
         ChaChaEngine engine = new ChaChaEngine();
         Poly1305 mac = new Poly1305();
-        engine.init(true, new ParametersWithIV(new KeyParameter(key), getNonce(input)));
+        byte[] nonce = getNonce(input);
+        byte[] timeStamp = getTimeStamp(input);
+        engine.init(true, new ParametersWithIV(new KeyParameter(key), nonce));
 
         byte[] computedMac = new byte[16];
         byte[] receivedMac = new byte[16];
@@ -248,8 +270,13 @@ public class Crypto {
 
         //update mac with data and decrypt data
         mac.update(data, 0, data.length);
-        engine.processBytes(data, 0, data.length, out, 0);
 
+        //mac crypto header
+        mac.update(nonce, 0, nonce.length);
+        mac.update(timeStamp, 0, timeStamp.length);
+
+        //decrypt
+        engine.processBytes(data, 0, data.length, out, 0);
         // check if the two MACs match
         mac.doFinal(computedMac, 0);
         if (Arrays.equals(receivedMac, computedMac)) {
@@ -259,14 +286,13 @@ public class Crypto {
         }
     }
 
-    //key, getNonce(data), getData(data));
     private byte[] encryptWithChaChaPoly(byte[] key, byte[] nonce, byte[] input) {
         ChaChaEngine engine = new ChaChaEngine();
         Poly1305 mac = new Poly1305();
         engine.init(true, new ParametersWithIV(new KeyParameter(key), nonce));
         byte[] ciphertextMac = new byte[16];
 
-        //initMAC(cipher); -- entire function       
+        //init mac
         byte[] firstBlock = new byte[64];
         engine.processBytes(firstBlock, 0, firstBlock.length, firstBlock, 0);
         // NOTE: The BC implementation puts 'r' after 'k'
@@ -274,16 +300,21 @@ public class Crypto {
         KeyParameter macKey = new KeyParameter(firstBlock, 16, 32);
         Poly1305KeyGenerator.clamp(macKey.getKey());
         mac.init(macKey);
-        //end function
 
         byte out[] = new byte[input.length];
         engine.processBytes(input, 0, input.length, out, 0);
         mac.update(out, 0, out.length);
+
+        //crypto header
+        mac.update(nonce, 0, nonce.length);
+        byte[] timeStamp = createTimeStamp();
+        mac.update(timeStamp, 0, timeStamp.length);
         mac.doFinal(ciphertextMac, 0);
 
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         try {
             outputStream.write(ciphertextMac);
+            outputStream.write(timeStamp);
             outputStream.write(nonce);
             outputStream.write(out);
         } catch (IOException ex) {
@@ -352,7 +383,8 @@ public class Crypto {
      */
     public byte[] encryptWithAESGCM(byte[] key, byte[] nonce, byte[] data) {
         // encrypt
-        AEADParameters parameters = new AEADParameters(new KeyParameter(key), 128, nonce);//, aad);
+        byte[] timeStamp = createTimeStamp();
+        AEADParameters parameters = new AEADParameters(new KeyParameter(key), 128, nonce, timeStamp);
         GCMBlockCipher gcmEngine = new GCMBlockCipher(new AESFastEngine());
         gcmEngine.init(true, parameters);
 
@@ -365,7 +397,15 @@ public class Crypto {
             Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
         }
 
-        return prependNonce(nonce, encMsg);
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        try {
+            outputStream.write(timeStamp);
+            outputStream.write(nonce);
+            outputStream.write(encMsg);
+        } catch (IOException ex) {
+            Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return outputStream.toByteArray();
     }
 
     /**
@@ -374,11 +414,12 @@ public class Crypto {
      * @param key
      * @param data
      * @param nonce
+     * @param timestamp
      * @return
      */
-    public byte[] decryptWithAESGCM(byte[] key, byte[] nonce, byte[] data) {
+    public byte[] decryptWithAESGCM(byte[] key, byte[] nonce, byte[] data, byte[] timestamp) {
         AEADParameters parameters = new AEADParameters(
-                new KeyParameter(key), 128, nonce);//, aad);
+                new KeyParameter(key), 128, nonce, timestamp);
         GCMBlockCipher gcmEngine = new GCMBlockCipher(new AESFastEngine());
         gcmEngine.init(false, parameters);
 
@@ -399,7 +440,7 @@ public class Crypto {
                 NONCE_SIZE = 12;
                 HMAC_SIZE = 0;
                 KEY_SIZE = 16;
-                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE + TIMESTAMP_SIZE;
                 MESSAGE_FORMAT = 0;
                 break;
 
@@ -407,7 +448,7 @@ public class Crypto {
                 NONCE_SIZE = 12;
                 HMAC_SIZE = 0;
                 KEY_SIZE = 32;
-                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE + TIMESTAMP_SIZE;
                 MESSAGE_FORMAT = 1;
                 break;
 
@@ -415,7 +456,7 @@ public class Crypto {
                 NONCE_SIZE = 8;
                 HMAC_SIZE = 32;
                 KEY_SIZE = 32;
-                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE + TIMESTAMP_SIZE;
                 CHACHA_ROUNDS = 20;
                 MESSAGE_FORMAT = 2;
                 break;
@@ -424,7 +465,7 @@ public class Crypto {
                 NONCE_SIZE = 8;
                 HMAC_SIZE = 32;
                 KEY_SIZE = 32;
-                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE + TIMESTAMP_SIZE;
                 CHACHA_ROUNDS = 12;
                 MESSAGE_FORMAT = 3;
                 break;
@@ -433,7 +474,7 @@ public class Crypto {
                 NONCE_SIZE = 8;
                 HMAC_SIZE = 16;
                 KEY_SIZE = 32;
-                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE + TIMESTAMP_SIZE;
                 CHACHA_ROUNDS = 20;
                 MESSAGE_FORMAT = 4;
                 break;
@@ -442,7 +483,7 @@ public class Crypto {
                 NONCE_SIZE = 16;
                 HMAC_SIZE = 32;
                 KEY_SIZE = 32;
-                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE;
+                CRYPTO_HEADER_SIZE = NONCE_SIZE + HMAC_SIZE + TIMESTAMP_SIZE;
                 MESSAGE_FORMAT = 5;
                 break;
 
@@ -482,14 +523,17 @@ public class Crypto {
     }
 
     public byte[] decryptMessage(byte[] key, byte[] data) throws IOException {
+        if (!validateTimeStamp(getTimeStamp(data))) {
+            System.out.println("Message delay high! Potential delay attack");
+        }
         switch (MESSAGE_FORMAT) {
             //AES_126_GCM
             case 0:
-                return decryptWithAESGCM(key, getNonce(data), getData(data));
+                return decryptWithAESGCM(key, getNonce(data), getData(data), getTimeStamp(data));
 
             //AES_256_GCM
             case 1:
-                return decryptWithAESGCM(key, getNonce(data), getData(data));
+                return decryptWithAESGCM(key, getNonce(data), getData(data), getTimeStamp(data));
 
             //CHACHA20/20_HMAC
             case 2:
@@ -534,7 +578,16 @@ public class Crypto {
         byte[] ciphertxt = new byte[data.length];
         ctrEngine.processBytes(data, 0, data.length, ciphertxt, 0);
 
-        byte out[] = prependNonce(nonce, ciphertxt);
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        try {
+            outputStream.write(createTimeStamp());
+            outputStream.write(nonce);
+            outputStream.write(ciphertxt);
+        } catch (IOException ex) {
+            Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+        byte[] out = outputStream.toByteArray();
         return prependMac(generateHMac(key, out), out);
     }
 
@@ -550,39 +603,78 @@ public class Crypto {
     public byte[] getKey() {
         return key;
     }
-    
-    public static void setKey(byte[] key){
+
+    public static void setKey(byte[] key) {
         Crypto.key = key;
     }
-    
+
+    public byte[] createTimeStamp() {
+        Date stamp = new Timestamp(new Date().getTime());
+        long msec = stamp.toInstant().minusSeconds(0).getEpochSecond();
+        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+        buffer.putLong(msec);
+        return buffer.array();
+    }
+    public static int good = 0;
+    public static int bad = 0;
+
+    public boolean validateTimeStamp(byte[] timeStamp) {
+        Date nowDate = new Timestamp(new Date().getTime());
+
+        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+        buffer.put(timeStamp);
+        buffer.flip();//need flip 
+        long time = buffer.getLong();
+        
+        Instant received = new Date(time*1000).toInstant();
+        Instant now = nowDate.toInstant();
+
+        /*System.out.println("now:      "+now.toString());
+        System.out.println("received: "+received.toString());*/
+
+        //check if message is from later than current time
+        if (received.isAfter(now)) {
+            bad++;
+            return false;
+        }
+
+        //check if it is whithin allowed timeframe
+        if (received.isAfter(now.minusSeconds(allowedTimeVariance))) {
+            good++;
+            return true;
+        }
+
+        return false;
+    }
 
     //-------------asymmetric encryption part------------------------//
     public void exchangeKeyServer(String[] allowed) {
-        serverRunnable = new ServerRunnable(SERVER_IP, COMMUNICATION_PORT);
+        serverRunnable = new ServerRunnable(Videostream.IP_ADDRESS, Videostream.PORT);
         reKey();
-        serverRunnable.setResponse(prependMac(("4:".getBytes()), Crypto.key));
+
+        serverRunnable.setResponse(prependMac((Integer.toString(MESSAGE_FORMAT) + ":").getBytes(), Crypto.key));
         serverRunnable.setAllowedPartyTime(allowed);
         Thread server = new Thread(serverRunnable);
         server.start();
     }
 
     public void exchangeKeyClient(String targetip) throws Exception {
-        NioSslClient client = new NioSslClient("TLSv1.2", targetip, COMMUNICATION_PORT);
+        NioSslClient client = new NioSslClient("TLSv1.2", targetip, Videostream.PORT);
         client.connect();
         client.write("0:1:2:3:4:5".getBytes());
         client.read();
         client.shutdown();
     }
-    
-     /**
+
+    /**
      * Method that start the reKeying process between sending en receiving
      * clients
      *
      * @return The new synchronous key between clients
      */
     public void reKey() {
-       Crypto.key = createKey();
-       serverRunnable.setResponse(prependMac(("4:".getBytes()), Crypto.key));
+        Crypto.key = createKey();
+        serverRunnable.setResponse(prependMac((Integer.toString(MESSAGE_FORMAT) + ":").getBytes(), Crypto.key));
     }
 
 }
