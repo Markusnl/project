@@ -69,9 +69,9 @@ public class NioSslClient extends NioSslPeer {
         this.port = port;
  
         SSLContext context = SSLContext.getInstance(protocol);
-        context.init(createKeyManagers("certs/EC256/Client/Clientkey.jks", "thales", "thales"), createTrustManagers("certs/EC256/Trusted.jks", "thales"), new SecureRandom());
+        context.init(createKeyManagers("certs/EC256/Client/Clientkey2.jks", "thales", "thales"), createTrustManagers("certs/EC256/Trusted.jks", "thales"), new SecureRandom());
         engine = context.createSSLEngine(remoteAddress, port);
-        engine.setEnabledCipherSuites(new String[]{"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"});
+        engine.setEnabledCipherSuites(new String[]{"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384","TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"});
         engine.setUseClientMode(true);
  
         SSLSession session = engine.getSession();

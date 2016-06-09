@@ -524,7 +524,7 @@ public class Crypto {
 
     public byte[] decryptMessage(byte[] key, byte[] data) throws IOException {
         if (!validateTimeStamp(getTimeStamp(data))) {
-            System.out.println("Message delay high! Potential delay attack");
+            //System.out.println("Message delay high! Potential delay attack");
         }
         switch (MESSAGE_FORMAT) {
             //AES_126_GCM
@@ -610,13 +610,11 @@ public class Crypto {
 
     public byte[] createTimeStamp() {
         Date stamp = new Timestamp(new Date().getTime());
-        long msec = stamp.toInstant().minusSeconds(0).getEpochSecond();
+        long msec = stamp.toInstant().plusSeconds(1).getEpochSecond();
         ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
         buffer.putLong(msec);
         return buffer.array();
     }
-    public static int good = 0;
-    public static int bad = 0;
 
     public boolean validateTimeStamp(byte[] timeStamp) {
         Date nowDate = new Timestamp(new Date().getTime());
@@ -633,17 +631,14 @@ public class Crypto {
         System.out.println("received: "+received.toString());*/
 
         //check if message is from later than current time
-        if (received.isAfter(now)) {
-            bad++;
+        if (received.isAfter(now)) 
             return false;
-        }
+        
 
         //check if it is whithin allowed timeframe
-        if (received.isAfter(now.minusSeconds(allowedTimeVariance))) {
-            good++;
+        if (received.isAfter(now.minusSeconds(allowedTimeVariance)))
             return true;
-        }
-
+        
         return false;
     }
 

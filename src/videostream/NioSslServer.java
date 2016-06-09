@@ -8,11 +8,12 @@ import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.SelectorProvider;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.security.cert.Certificate;
 import java.util.Iterator;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
@@ -20,6 +21,7 @@ import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLSession;
 import static javax.xml.bind.DatatypeConverter.printHexBinary;
+import static org.bouncycastle.util.encoders.Hex.toHexString;
 
 /**
  * An SSL/TLS server, that will listen to a specific address and port and serve
@@ -81,8 +83,7 @@ public class NioSslServer extends NioSslPeer {
         startTime = System.nanoTime();
         context = SSLContext.getInstance(protocol);
         context.init(createKeyManagers("certs/EC256/Server/Serverkey.jks", "thales", "thales"), createTrustManagers("certs/EC256/trusted.jks", "thales"), new SecureRandom());
-        
-        
+
         SSLSession dummySession = context.createSSLEngine().getSession();
         myAppData = ByteBuffer.allocate(dummySession.getApplicationBufferSize());
         myNetData = ByteBuffer.allocate(dummySession.getPacketBufferSize());
@@ -186,35 +187,43 @@ public class NioSslServer extends NioSslPeer {
         String[] ips = socketChannel.getRemoteAddress().toString().split("\\:");
         System.out.println(ips[0].substring(1) + " wants to connect on port: " + ips[1]);
 
-        //is he on the allowed list?
-        for (int i = 0; i < allowed.length; i++) {
-            if (allowed[i].equals(ips[0].substring(1)) && Integer.valueOf(allowed[i + 1]) > 0) {
-                System.out.println("Target found on allowed list");
-                mayWatch = true;
+        socketChannel.configureBlocking(false);
 
-                socketChannel.configureBlocking(false);
+        SSLEngine engine = context.createSSLEngine();
+        engine.setEnabledCipherSuites(new String[]{"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"});
+        engine.setUseClientMode(false);
+        engine.setNeedClientAuth(true);
+        engine.beginHandshake();
 
-                SSLEngine engine = context.createSSLEngine();
-                engine.setEnabledCipherSuites(new String[]{"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"});
-                engine.setUseClientMode(false);
-                engine.setNeedClientAuth(true);
-                engine.beginHandshake();
+        if (doHandshake(socketChannel, engine)) {
+            socketChannel.register(selector, SelectionKey.OP_READ, engine);
 
-                if (doHandshake(socketChannel, engine)) {
-                    socketChannel.register(selector, SelectionKey.OP_READ, engine);
-                } else {
-                    socketChannel.close();
-                    if (Videostream.debug) {
-                        System.out.println("Connection closed due to handshake failure.");
-                    }
+            //get certificate
+            Certificate cert[] = engine.getSession().getPeerCertificates();
+            MessageDigest sha1 = MessageDigest.getInstance("SHA1");
+            sha1.update(cert[0].getEncoded());
+            String presentedcert = toHexString(sha1.digest());
+            System.out.println("certificate presented with hash:" + presentedcert);
+
+            //is he on the allowed list?
+            for (int i = 0; i < allowed.length; i++) {
+                if (allowed[i].equals(presentedcert) && Integer.valueOf(allowed[i + 1]) > 0) {
+                    System.out.println("Target found on allowed list");
+                    mayWatch = true;
                 }
             }
-        }
-        if (!mayWatch) {
-            System.out.println("target not allowed to watch stream!");
-            socketChannel.close();
-        }
+            //not on allowed list apparantly
+            if (!mayWatch) {
+                System.out.println("target not allowed to watch stream!");
+                socketChannel.close();
+            }
 
+        } else {
+            socketChannel.close();
+            if (Videostream.debug) {
+                System.out.println("Connection closed due to handshake failure.");
+            }
+        }
     }
 
     /**

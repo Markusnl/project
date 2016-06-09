@@ -19,8 +19,8 @@ public class Videostream {
     private Crypto crypt = new Crypto();
     
     //server address
-    public static final String IP_ADDRESS = "130.161.177.84";//"192.168.50.100";
-    public static final int PORT = 443;
+    public static final String IP_ADDRESS = "130.161.177.84";//"145.24.221.158";//"192.168.50.100";
+    public static final int PORT = 5000;
     
     //camera login
     public static final String username = "admin";
@@ -33,10 +33,11 @@ public class Videostream {
 
     public static void main(String[] args) {
         Videostream stream = new Videostream();
-        stream.streamClient("C:\\Libs\\opencv\\sources\\samples\\cpp\\tutorial_code\\HighGUI\\video-input-psnr-ssim\\video\\Megamind.avi");
-        //stream.receiveClient();
+        //stream.streamClient("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
+        stream.receiveClient();
         //TEST URLS
         /*  
+            "http://i.istockimg.com/video_passthrough/71680603/153/71680603.mp4"
             "rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov"
             "http://administrator:thales@192.168.50.253/cgi-bin/nphcontinuousserverpush"
             "http://ak7.picdn.net/shutterstock/videos/2487797/preview/stock-footage-digital-countdown-timer-in-blue-color-over-black-background.mp4"
@@ -48,10 +49,8 @@ public class Videostream {
     }
 
     public void streamClient(String mediaUrl) {
-        String username = "admin";
-        String password = "12345";
         crypt.setCipher(Crypto.CHACHA20_POLY);
-        String[] allowed = {IP_ADDRESS, "3600", "130.161.177.117", "30", "192.168.0.26", "3600", "145.24.243.80", "3600"};
+        String[] allowed={"cf947f00247538718d32ec1d093ca8ddcfcaf8aa","30","892eb30a57bb487ee7e5c5335b877db2884f4e1d","3600"};
         crypt.exchangeKeyServer(allowed);
         System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
         //get smallest required rekey time
@@ -95,17 +94,7 @@ public class Videostream {
     }
 
     public void receiveClient() {
-        Timer timer = new Timer();
-        timer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                System.out.println("good: "+ Crypto.good);
-                System.out.println("bad: "+ Crypto.bad);
-            }
-        }, 10 * 1000, 10 * 1000);
-        
-        
-        try {
+      try {
             crypt.exchangeKeyClient(IP_ADDRESS);
             System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
         } catch (Exception ex) {
