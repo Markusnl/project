@@ -1,17 +1,11 @@
 package videostream;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.sql.Timestamp;
-import java.text.DateFormat;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Date;
@@ -74,6 +68,11 @@ public class Crypto {
         return mac;
     }
 
+    /**
+     * Returns the timestamp from the given message
+     * @param input The timestamp, stripped from the input
+     * @return 
+     */
     public byte[] getTimeStamp(byte[] input) {
         byte timestamp[] = new byte[TIMESTAMP_SIZE];
         System.arraycopy(input, HMAC_SIZE, timestamp, 0, TIMESTAMP_SIZE);
@@ -243,6 +242,13 @@ public class Crypto {
         return prependMac(generateHMac(key, out), out);
     }
 
+    /**
+     * Decrypt message using chachapoly
+     * @param key cryptographic key, 256 bit
+     * @param input ciphertext that should be decrypted
+     * @return the output of the decrypt, the plaintext
+     * @throws IOException 
+     */
     private byte[] decryptWithChaChaPoly(byte[] key, byte[] input) throws IOException {
         ChaChaEngine engine = new ChaChaEngine();
         Poly1305 mac = new Poly1305();
@@ -286,6 +292,14 @@ public class Crypto {
         }
     }
 
+    /**
+     * encrypt message using chachapoly
+     * @param key cryptographic key, 256 bit
+     * @param input plaintext that should be encrypted
+     * @param nonce The nonce used to initialize the crypto engine
+     * @return the output of the encrypt, the ciphertext
+     * @throws IOException 
+     */
     private byte[] encryptWithChaChaPoly(byte[] key, byte[] nonce, byte[] input) {
         ChaChaEngine engine = new ChaChaEngine();
         Poly1305 mac = new Poly1305();
@@ -375,11 +389,11 @@ public class Crypto {
     }
 
     /**
-     *
-     * @param key
-     * @param nonce 12 bit nonce!
-     * @param data
-     * @return
+     * Encrypt using AES_Keysize X_GCM
+     * @param key variable keysize (128,192,256)
+     * @param nonce The 12 bit nonce
+     * @param data The plaintext to be encrypted
+     * @return the encrypted plaintext, the ciphertext
      */
     public byte[] encryptWithAESGCM(byte[] key, byte[] nonce, byte[] data) {
         // encrypt
@@ -409,13 +423,13 @@ public class Crypto {
     }
 
     /**
-     * 12 bit nonce!
+     * Decrypts the ciphertext to the plaintext
      *
-     * @param key
-     * @param data
-     * @param nonce
-     * @param timestamp
-     * @return
+     * @param key The cryptographic key
+     * @param data The ciphertext
+     * @param nonce The 12 bit nonce
+     * @param timestamp The timestamp prepended to the ciphertext
+     * @return The ciphertext decrypted, the plaintext
      */
     public byte[] decryptWithAESGCM(byte[] key, byte[] nonce, byte[] data, byte[] timestamp) {
         AEADParameters parameters = new AEADParameters(
@@ -434,6 +448,10 @@ public class Crypto {
         return decMsg;
     }
 
+    /**
+     * Changes the cipher used to encrypt the data that encrypts the stream
+     * @param cipher The enumerated cipher choice
+     */
     public void setCipher(int cipher) {
         switch (cipher) {
             case 0:
@@ -493,6 +511,11 @@ public class Crypto {
         }
     }
 
+    /**
+     * Encrypts a messages using the selected cipher choice
+     * @param data The data that should be encrypted
+     * @return the ciphertext from the given plaintext that can be transmitted over a network securely
+     */
     public byte[] encryptMessage(byte[] data) {
         byte[] nonce = createNonce();
         switch (MESSAGE_FORMAT) {
@@ -522,6 +545,13 @@ public class Crypto {
         return null;
     }
 
+    /**
+     * get the content of an encrypted message
+     * @param key The symmetric cryptographic key
+     * @param data The encrypted message
+     * @return The plaintext message, decrypted from the ciphertext
+     * @throws IOException 
+     */
     public byte[] decryptMessage(byte[] key, byte[] data) throws IOException {
         if (!validateTimeStamp(getTimeStamp(data))) {
             //System.out.println("Message delay high! Potential delay attack");
@@ -571,7 +601,14 @@ public class Crypto {
         }
         throw new IOException();
     }
-
+    
+    /**
+     * Encrypt message using AES_key size X_CTR
+     * @param key Variable key length (128,192,256) bits
+     * @param nonce The used nonce
+     * @param data The plaintext
+     * @return  The message containing the ciphertext created from the plaintext and all other message prerequisites
+     */
     private byte[] encryptWithAESCTR(byte[] key, byte[] nonce, byte[] data) {
         SICBlockCipher ctrEngine = new SICBlockCipher(new AESFastEngine());
         ctrEngine.init(true, new ParametersWithIV(new KeyParameter(key), nonce));
@@ -591,6 +628,13 @@ public class Crypto {
         return prependMac(generateHMac(key, out), out);
     }
 
+    /**
+     * Decrypt message with AES_CTR
+     * @param key The used cryptographic key
+     * @param nonce The used nonce 
+     * @param data The data that must be decrypted
+     * @return The plaintext, from the ciphertext
+     */
     private byte[] decryptWithAESCTR(byte[] key, byte[] nonce, byte[] data) {
         SICBlockCipher ctrEngine = new SICBlockCipher(new AESFastEngine());
         ctrEngine.init(false, new ParametersWithIV(new KeyParameter(key), nonce));
@@ -599,23 +643,39 @@ public class Crypto {
         return out;
     }
 
-    //returns symmetric crypto key -- debug purpose only remove this
+    /**
+     * Debug purpose key retrieval
+     * @return The current cryptographic key
+     */
     public byte[] getKey() {
         return key;
     }
-
+    
+    /**
+     * Sets the cryptographic key to the parameter
+     * @param key The key that should be used as the new cryptographic key
+     */
     public static void setKey(byte[] key) {
         Crypto.key = key;
     }
 
+    /**
+     * Method that creates a timestamp. Used to prevent replay attacks and is prepended to the ciphertext for that purpose
+     * @return The current time as a timestamp 
+     */
     public byte[] createTimeStamp() {
         Date stamp = new Timestamp(new Date().getTime());
-        long msec = stamp.toInstant().plusSeconds(1).getEpochSecond();
+        long msec = stamp.toInstant().getEpochSecond();
         ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
         buffer.putLong(msec);
         return buffer.array();
     }
 
+    /**
+     * Validates whether the timestamp presented is within the allowed timeframe
+     * @param timeStamp The presented timestamp
+     * @return True if the presented timestamp is whithin the allowed timeframe, false otherwise
+     */
     public boolean validateTimeStamp(byte[] timeStamp) {
         Date nowDate = new Timestamp(new Date().getTime());
 
@@ -623,36 +683,41 @@ public class Crypto {
         buffer.put(timeStamp);
         buffer.flip();//need flip 
         long time = buffer.getLong();
-        
-        Instant received = new Date(time*1000).toInstant();
+
+        Instant received = new Date(time * 1000).toInstant();
         Instant now = nowDate.toInstant();
 
-        /*System.out.println("now:      "+now.toString());
-        System.out.println("received: "+received.toString());*/
-
         //check if message is from later than current time
-        if (received.isAfter(now)) 
+        if (received.isAfter(now)) {
             return false;
-        
+        }
 
         //check if it is whithin allowed timeframe
-        if (received.isAfter(now.minusSeconds(allowedTimeVariance)))
+        if (received.isAfter(now.minusSeconds(allowedTimeVariance))) {
             return true;
-        
+        }
+
         return false;
     }
 
-    //-------------asymmetric encryption part------------------------//
+    /**
+     * Starts the TLS exchange in the sever perspective
+     * @param allowed list of parties including their allowed timeframes 
+     */
     public void exchangeKeyServer(String[] allowed) {
         serverRunnable = new ServerRunnable(Videostream.IP_ADDRESS, Videostream.PORT);
         reKey();
-
         serverRunnable.setResponse(prependMac((Integer.toString(MESSAGE_FORMAT) + ":").getBytes(), Crypto.key));
         serverRunnable.setAllowedPartyTime(allowed);
         Thread server = new Thread(serverRunnable);
         server.start();
     }
 
+    /**
+     * Attempts to retrieve a key from the stream server
+     * @param targetip IP-address of the server
+     * @throws Exception 
+     */
     public void exchangeKeyClient(String targetip) throws Exception {
         NioSslClient client = new NioSslClient("TLSv1.2", targetip, Videostream.PORT);
         client.connect();
@@ -664,8 +729,6 @@ public class Crypto {
     /**
      * Method that start the reKeying process between sending en receiving
      * clients
-     *
-     * @return The new synchronous key between clients
      */
     public void reKey() {
         Crypto.key = createKey();

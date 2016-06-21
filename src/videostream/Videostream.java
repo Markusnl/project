@@ -15,13 +15,16 @@ import static javax.xml.bind.DatatypeConverter.printHexBinary;
 
 public class Videostream {
 
+    //debugging variable for program
     public static final boolean debug = false;
+
+    //Crypto object for class
     private Crypto crypt = new Crypto();
-    
+
     //server address
-    public static final String IP_ADDRESS = "130.161.177.84";//"145.24.221.158";//"192.168.50.100";
+    public static final String IP_ADDRESS = "130.161.177.84";//"145.24.226.170";//"192.168.50.100";"
     public static final int PORT = 5000;
-    
+
     //camera login
     public static final String username = "admin";
     public static final String password = "12345";
@@ -31,11 +34,16 @@ public class Videostream {
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
     }
 
+    /**
+     * Entrypoint of the project, specification whether a streaming client or
+     * receiving client should be started
+     */
     public static void main(String[] args) {
         Videostream stream = new Videostream();
-        //stream.streamClient("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
-        stream.receiveClient();
-        //TEST URLS
+        stream.streamClient("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
+        //stream.receiveClient();
+
+        //Example URLS
         /*  
             "http://i.istockimg.com/video_passthrough/71680603/153/71680603.mp4"
             "rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov"
@@ -48,9 +56,16 @@ public class Videostream {
          */
     }
 
+    /**
+     * Stream Client, sets up the stream and has the option to change the used
+     * symmetric cryptographic algorithm and the parties who are allowed to
+     * watch the stream.
+     *
+     * @param mediaUrl the url that should be streamed
+     */
     public void streamClient(String mediaUrl) {
         crypt.setCipher(Crypto.CHACHA20_POLY);
-        String[] allowed={"cf947f00247538718d32ec1d093ca8ddcfcaf8aa","30","892eb30a57bb487ee7e5c5335b877db2884f4e1d","3600"};
+        String[] allowed = {"cf947f00247538718d32ec1d093ca8ddcfcaf8aa", "30", "892eb30a57bb487ee7e5c5335b877db2884f4e1d", "3600"};
         crypt.exchangeKeyServer(allowed);
         System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
         //get smallest required rekey time
@@ -86,15 +101,19 @@ public class Videostream {
         if (profiles == null || profiles.isEmpty()) {
             displayVideo(mediaUrl);
         } else {
-            mediaUrl="rtsp://"+username+":"+password+"@"+mediaUrl+"/ONVIF/MediaInput?profile="+profiles.elementAt(1);
-            System.out.println("Trying to connect to: "+mediaUrl);
+            mediaUrl = "rtsp://" + username + ":" + password + "@" + mediaUrl + "/ONVIF/MediaInput?profile=" + profiles.elementAt(1);
+            System.out.println("Trying to connect to: " + mediaUrl);
             displayVideo(mediaUrl);
         }
 
     }
 
+    /**
+     * The receiving client. Receives and plays the stream if he added on the
+     * list of allowed clients in the streaming client.
+     */
     public void receiveClient() {
-      try {
+        try {
             crypt.exchangeKeyClient(IP_ADDRESS);
             System.out.println("Symmetric crypto key: " + printHexBinary(crypt.getKey()));
         } catch (Exception ex) {
@@ -104,6 +123,13 @@ public class Videostream {
         receiver.receiveImages("224.1.1.1", 4446);
     }
 
+    /**
+     * Starts the video capture and the multicast server. Will encrypt data
+     * according to the specified algorithm in the streaming client Will also
+     * show the captured stream to the streaming client
+     *
+     * @param location the location of the video
+     */
     public void displayVideo(String location) {
         //use ANY to capture video location
         VideoCapture cap = new VideoCapture(location, Videoio.CAP_ANY);
@@ -143,6 +169,13 @@ public class Videostream {
 
     }
 
+    /**
+     * Method used to determine whether a string can be used as an IP-address
+     *
+     * @param ip The string representation of a possible IP-address
+     * @return True is the presented string can be used as an IP-address, false
+     * otherwise
+     */
     public static boolean validIP(String ip) {
         try {
             if (ip == null || ip.isEmpty()) {
@@ -179,6 +212,10 @@ public class Videostream {
         }
     }
 
+    /**
+     * Method that will encrypt and decrypt messages, used for performance
+     * measurements and sanity checks
+     */
     public void testCrypto() {
         Random r = new Random();
         byte key[];
@@ -196,7 +233,7 @@ public class Videostream {
                 //generate random data of random size to test
                 byte[] data = crypt.createRandom(10000);//r.nextInt(MulticastServer.DATAGRAM_MAX_SIZE));
                 avglength += data.length;
-                
+
                 //start ChaCha20poly performance test
                 crypt.setCipher(Crypto.CHACHA20_POLY);
                 long startTime4 = System.nanoTime();
@@ -204,7 +241,7 @@ public class Videostream {
                 key = crypt.getKey();
                 crypt.decryptMessage(key, ciphertxt4);
                 runTime4 += System.nanoTime() - startTime4;
-                       
+
                 //start AES GCM performance test
                 crypt.setCipher(Crypto.AES_128_GCM);
                 long startTime0 = System.nanoTime();

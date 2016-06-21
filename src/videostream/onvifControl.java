@@ -25,14 +25,26 @@ import java.util.Vector;
 
 public class OnvifControl {
 
+    /**
+     * Create a SOAP message end
+     * @return SOAP message end
+     */
     private String envelopeMessageEnd() {
         return "</soap:Envelope>";
     }
-
+    /**
+     * Create a SOAP message start including relevant namespaces
+     * @return SOAP message start
+     */
     private String envelopeMessageStart() {
         return "<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\"  xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\" xmlns:tds=\"http://www.onvif.org/ver10/device/wsdl\" xmlns:tt=\"http://www.onvif.org/ver10/schema\">";
     }
 
+    /**
+     * Creates an authentication header
+     * @return a usable header for authentication on ONVIF compliant devices
+     * @throws IOException 
+     */
     private String wsUsernameToken() throws IOException {
         String encodednonce = "";
         String encodeddigest = "";
@@ -78,6 +90,11 @@ public class OnvifControl {
         return header;
     }
 
+    /**
+     * Query the given IP-address with the getCapabilities function, outputs to console
+     * @param ip The IP-address of the device
+     * @throws IOException 
+     */
     public void getCapabilities(String ip) throws IOException {
         String message = envelopeMessageStart() + wsUsernameToken()
                 + "<soap:Body>"
@@ -88,18 +105,19 @@ public class OnvifControl {
                 + envelopeMessageEnd();
 
         try {
-            //return sendOnvif(message, ip);
             parseXML(sendOnvif(message, ip), "*");
         } catch (NullPointerException ex) {
             System.out.println(" - Messaging failed");
         } catch (ParserConfigurationException | SAXException ex) {
             Logger.getLogger(OnvifControl.class.getName()).log(Level.SEVERE, null, ex);
         }
-        //return null;
-
-        //return null;
     }
-
+    
+    /**
+     * Query the given IP-address with the getSystemDeviceInformation function, outputs to console
+     * @param ip The IP-address of the device
+     * @throws IOException 
+     */
     public void getSystemDeviceInformation(String ip) throws IOException {
         String message = envelopeMessageStart() + wsUsernameToken()
                 + "<soap:Body>"
@@ -115,6 +133,11 @@ public class OnvifControl {
         }
     }
 
+    /**
+     * Query the given IP-address with the getSystemDateAndTime function, outputs to console
+     * @param ip The IP-address of the device
+     * @throws IOException 
+     */
     public void getSystemDateAndTime(String ip) throws IOException {
         String message = envelopeMessageStart() + wsUsernameToken()
                 + "<soap:Body>"
@@ -129,7 +152,13 @@ public class OnvifControl {
             System.out.println(" - Messaging failed");
         }
     }
-
+    
+    /**
+     * Query the given IP-address with the getProfiles function
+     * @param ip The IP-address of the device
+     * @return a vector<string> containing viable profiles to create a media ulr
+     * @throws IOException 
+     */
     public Vector<String> getProfiles(String ip) throws IOException {
         String message = envelopeMessageStart() + wsUsernameToken()
                 + "<soap:Body>"
@@ -144,6 +173,13 @@ public class OnvifControl {
         return null;
     }
 
+    /**
+     * Sends the created query to the device
+     * @param message The query generated
+     * @param ip The IP-address of the device
+     * @return The response of the device as String
+     * @throws IOException 
+     */
     private String sendOnvif(String message, String ip) throws IOException {
         String url = "http://" + ip + "/onvif/device_service";
         URL obj = new URL(url);
@@ -181,6 +217,14 @@ public class OnvifControl {
         return null;
     }
 
+    /**
+     * Parses the String response to more human readable and usable information, prints to console
+     * @param message The message to parse
+     * @param tagname The desired information tag
+     * @throws ParserConfigurationException
+     * @throws IOException
+     * @throws SAXException 
+     */
     private void parseXML(String message, String tagname) throws ParserConfigurationException, IOException, SAXException {
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setNamespaceAware(true);
@@ -201,6 +245,15 @@ public class OnvifControl {
         }
     }
 
+    /**
+     * Parses the String response to more human readable and usable information
+     * @param message The message to parse
+     * @param tagname The desired information tag
+     * @return a vector<string> containing viable profiles parsed to be used
+     * @throws ParserConfigurationException
+     * @throws IOException
+     * @throws SAXException 
+     */
     private Vector<String> parseProfiles(String message, String tagname) throws ParserConfigurationException, IOException, SAXException {
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setNamespaceAware(true);
@@ -229,6 +282,10 @@ public class OnvifControl {
         return profiles;
     }
 
+    /**
+     * Create timestamp conform requirements ONVIF header
+     * @return ONVIF header conform timestamp
+     */
     private String getCurrentTimeStamp() {
         SimpleDateFormat dDate = new SimpleDateFormat("yyyy-MM-dd");//dd/MM/yyyy
         SimpleDateFormat tDate = new SimpleDateFormat("HH:mm:ss");//dd/MM/yyyy

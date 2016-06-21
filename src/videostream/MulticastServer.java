@@ -14,17 +14,19 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.UnknownHostException;
+import java.util.Iterator;
+import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
 import org.opencv.core.Mat;
 
 
-/**
- *
- * @author markv_000
- */
 class MulticastServer implements Runnable {
 
     /* Flags and sizes */
+    public static float quality = 0.75f;
     public static int HEADER_SIZE = 8;
     public static int MAX_PACKETS = 255;
     public static int SESSION_START = 128;
@@ -37,21 +39,21 @@ class MulticastServer implements Runnable {
     protected DatagramSocket socket = null;
     protected boolean running = true;
     private Mat toSend = null;
-    
 
     //constructor
-    public MulticastServer(int port){}
+    public MulticastServer(int port) {
+    }
 
     @Override
     public synchronized void run() {
         int sessionNumber = 0;
         Crypto crypt = new Crypto();
-        
+
         while (true) {
             try {
                 wait();
                 /* Get image or screenshot */
-                byte[] imageByteArray = matToByteArray(toSend,OUTPUT_FORMAT);
+                byte[] imageByteArray = matToByteArray(toSend, OUTPUT_FORMAT);
                 int packets = (int) Math.ceil(imageByteArray.length / (float) DATAGRAM_MAX_SIZE);
 
                 /* If image has more than MAX_PACKETS slices -> error */
@@ -81,14 +83,13 @@ class MulticastServer implements Runnable {
 
                     /* Copy current slice to byte array */
                     System.arraycopy(imageByteArray, i * DATAGRAM_MAX_SIZE, data, HEADER_SIZE, size);
-                    
 
                     crypt.setCipher(Crypto.CHACHA20_POLY);
                     byte[] ciphertext = crypt.encryptMessage(data);
-               
+
                     //send data
                     sendImage(ciphertext, "224.1.1.1", 4446);
-             
+
                     /* Leave loop if last slice has been sent */
                     if ((flags & SESSION_END) == SESSION_END) {
                         break;
@@ -113,6 +114,13 @@ class MulticastServer implements Runnable {
         notifyAll();
     }
 
+    /**
+     * Transforms an OpenCV mat to a byte array
+     * @param m The mat to transform
+     * @param format The desired format
+     * @return The mat transformed to a byte array
+     * @throws IOException 
+     */
     public byte[] matToByteArray(Mat m, String format) throws IOException {
         // Check if image is grayscale or color
         int type = BufferedImage.TYPE_BYTE_GRAY;
@@ -127,15 +135,31 @@ class MulticastServer implements Runnable {
         final byte[] targetPixels = ((DataBufferByte) image.getRaster().getDataBuffer()).getData();
         System.arraycopy(b, 0, targetPixels, 0, b.length);
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ImageIO.write(image, format, baos);
-        /* test for crypto output
-        File file = new File("test.bmp");
-        ImageIO.write(image, format, file);*/
-        return baos.toByteArray();
+        Iterator iter = ImageIO.getImageWritersByFormatName("jpeg");
+        ImageWriter writer = (ImageWriter) iter.next();
+        ImageWriteParam iwp = writer.getDefaultWriteParam();
+
+        iwp.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+        iwp.setCompressionQuality(quality);
+
+        ByteArrayOutputStream baos1 = new ByteArrayOutputStream();
+        ImageOutputStream ios = ImageIO.createImageOutputStream(baos1);
+        writer.setOutput(ios);
+        IIOImage Iimage = new IIOImage(image, null, null);
+        writer.write(null, Iimage, iwp);
+        writer.dispose();
+        
+        return baos1.toByteArray();
 
     }
 
+    /**
+     * Sends the image in byte array to the multicast group
+     * @param imageData The frame to send
+     * @param multicastAddress The desired multicast group
+     * @param port The desired port
+     * @return True is sending was succesfull, fail otherwise.
+     */
     private boolean sendImage(byte[] imageData, String multicastAddress, int port) {
         InetAddress ia;
         boolean ret = false;
